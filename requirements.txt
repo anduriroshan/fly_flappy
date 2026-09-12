@@ -1,0 +1,14 @@
+# CPU-only requirements. Safe on the laptop.
+# Install: python -m pip install -r requirements.txt
+numpy>=1.24,<2.0
+scipy>=1.10
+pyyaml>=6.0
+tqdm>=4.65
+opencv-python>=4.8
+gymnasium>=0.29
+flappy-bird-gymnasium>=0.4.0
+stable-baselines3>=2.3
+networkx>=3.1
+matplotlib>=3.7
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.2

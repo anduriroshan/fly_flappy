@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+.mypy_cache/
+.pytest_cache/
+
+# Data
+data/connectome/raw/*
+data/connectome/*.npz
+!data/connectome/.gitkeep
+
+# Run outputs
+runs/checkpoints/*
+runs/videos/*
+runs/tb/*
+!runs/**/.gitkeep
+
+# Editor
+.idea/
+.vscode/
+*.swp

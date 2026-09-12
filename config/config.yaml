@@ -1,0 +1,86 @@
+# =====================================================================
+# Fly-Flappy: Biological Connectome RL Configuration
+# ---------------------------------------------------------------------
+# All knobs for local smoke-tests and full GPU-server runs live here.
+# Two profiles: `smoke` (CPU laptop) and `full` (GPU server).
+# =====================================================================
+
+profile: smoke   # one of: smoke | full
+
+# --------------------------- Connectome ------------------------------
+connectome:
+  # Path to a pre-processed connectome cache (.npz). Regenerated if missing.
+  cache_path: data/connectome/flywire_connectome.npz
+
+  # Source dataset. `synthetic` produces a random-but-structured graph
+  # so laptops without the ~2 GB FlyWire download can still run.
+  # `flywire` loads the real Codex export from `raw_dir`.
+  source: synthetic          # synthetic | flywire
+  raw_dir: data/connectome/raw
+
+  # Neuron / synapse budget per profile. `full` uses the real ~139k.
+  budgets:
+    smoke:
+      neurons: 2048
+      synapses_per_neuron: 32
+    full:
+      neurons: 139255
+      synapses_per_neuron: 120
+
+  # Fraction of neurons wired as sensory (afferent) and motor (efferent).
+  sensory_fraction: 0.05
+  motor_fraction:   0.02
+
+  # Random seed for graph construction (synthetic + subsampling).
+  seed: 1337
+
+# ----------------------------- Model ---------------------------------
+model:
+  # Simulation steps of the recurrent spiking-esque connectome per env step.
+  sim_steps: 4
+  # Leak factor of the membrane potential (0 = perfect integrator, 1 = memoryless).
+  leak: 0.15
+  # Nonlinearity applied to per-neuron activations: tanh | relu | sigmoid.
+  activation: tanh
+  # If true, synapse weights are learnable. If false, only readout learns.
+  train_synapses: true
+
+# ---------------------------- Environment ----------------------------
+env:
+  id: FlappyBird-v0
+  # `simple` uses the 12-dim state vector; `pixels` uses RGB frames.
+  observation_mode: simple
+  # Parallel envs. Local CPU: 1-2. GPU box: 16+.
+  n_envs:
+    smoke: 1
+    full:  16
+
+# ---------------------------- Training -------------------------------
+training:
+  algorithm: PPO
+  total_timesteps:
+    smoke: 5000
+    full:  5000000
+  learning_rate: 3.0e-4
+  n_steps: 512
+  batch_size: 256
+  gamma: 0.99
+  gae_lambda: 0.95
+  ent_coef: 0.01
+  checkpoint_dir: runs/checkpoints
+  tensorboard_dir: runs/tb
+
+# --------------------------- Telemetry -------------------------------
+telemetry:
+  enabled: true
+  video_dir: runs/videos
+  fps: 30
+  panel_height: 512
+  panel_width:  512
+  # Every N env steps, write a frame to the mp4 (1 = every step).
+  frame_stride: 1
+  # Neurons displayed in the heatmap (grid = ceil(sqrt(k))^2).
+  heatmap_neurons: 1024
+
+# ----------------------------- Device --------------------------------
+device: auto   # auto | cpu | cuda | cuda:0
