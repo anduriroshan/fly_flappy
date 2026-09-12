@@ -1,0 +1,6 @@
+# Large binary files transferred via git — stored in Git LFS, not inline in
+# the repo history. Needs `git lfs install` once per machine (laptop + GPU
+# server) before clone/pull will materialize the real content instead of
+# LFS pointer stubs.
+data/connectome/raw/*.csv filter=lfs diff=lfs merge=lfs -text
+runs/videos/*.mp4 filter=lfs diff=lfs merge=lfs -text

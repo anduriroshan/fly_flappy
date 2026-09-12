@@ -218,17 +218,19 @@ __marimo__/
 .streamlit/secrets.toml
 
 # ---- fly-flappy project-specific ----
-# Data
-data/connectome/raw/*
+# Data: raw connectome CSVs are intentionally tracked (via Git LFS, see
+# .gitattributes) as the transfer mechanism between laptop and GPU server.
+# The .npz cache is NOT — it's derived from the CSVs and rebuilds in
+# seconds on any machine, so there's no reason to transfer/version it.
 data/connectome/*.npz
-!data/connectome/.gitkeep
 
 # Run outputs
 runs/checkpoints/*
-runs/videos/*
 runs/tb/*
 runs/morphology/*
 !runs/**/.gitkeep
+# runs/videos/* intentionally NOT ignored — tracked via Git LFS (transfer
+# mechanism for training/render videos between laptop and GPU server).
 
 # Editor
 .idea/
