@@ -21,14 +21,15 @@ class DashboardCallback(BaseCallback):
     def __init__(self, video_path: str | Path, fps: int = 30,
                  frame_stride: int = 1, panel_h: int = 512, panel_w: int = 512,
                  heatmap_neurons: int = 20000, positions: Optional[np.ndarray] = None,
-                 rotate_speed: float = 0.02, verbose: int = 0):
+                 edges=None, rotate_speed: float = 0.02, verbose: int = 0):
         super().__init__(verbose)
         self.video_path = Path(video_path)
         self.frame_stride = int(frame_stride)
         self.recorder = VideoRecorder(self.video_path, fps=fps)
         self.dashboard = Dashboard(panel_h=panel_h, panel_w=panel_w,
                                    heatmap_neurons=heatmap_neurons,
-                                   positions=positions, rotate_speed=rotate_speed)
+                                   positions=positions, edges=edges,
+                                   rotate_speed=rotate_speed)
         self._last_action: int = 0
 
     def _on_step(self) -> bool:
@@ -70,4 +71,4 @@ class DashboardCallback(BaseCallback):
     def _on_training_end(self) -> None:
         self.recorder.close()
         if self.verbose:
-            print(f"[dashboard] wrote {self.recorder.frames_written} frames → {self.video_path}")
+            print(f"[dashboard] wrote {self.recorder.frames_written} frames -> {self.video_path}")

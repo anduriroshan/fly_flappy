@@ -31,15 +31,17 @@ def main():
 
     cfg = load_config(args.config, profile=args.profile)
     device = resolve_device(cfg.device)
-    env = make_env(cfg.env["id"])()
+    env = make_env(cfg.env["id"], observation_mode=cfg.env.get("observation_mode", "simple"))()
     model = PPO.load(args.checkpoint, device=device)
 
     positions = model.policy.connectome.neuron_positions.detach().cpu().numpy()
+    edges = model.policy.connectome.get_synapse_edges()
     dashboard = Dashboard(
         panel_h=cfg.telemetry["panel_height"],
         panel_w=cfg.telemetry["panel_width"],
         heatmap_neurons=cfg.telemetry["heatmap_neurons"],
         positions=positions,
+        edges=edges,
         rotate_speed=cfg.telemetry.get("brain_rotate_speed", 0.02),
     )
     with VideoRecorder(args.out, fps=cfg.telemetry["fps"]) as rec:
@@ -67,7 +69,7 @@ def main():
                 )
                 rec.write(frame)
             print(f"episode {ep + 1}  reward={ep_reward:+.2f}")
-    print(f"wrote {rec.frames_written} frames → {args.out}")
+    print(f"wrote {rec.frames_written} frames -> {args.out}")
 
 
 if __name__ == "__main__":

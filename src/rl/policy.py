@@ -75,16 +75,22 @@ class ConnectomeActorCriticPolicy(ActorCriticPolicy):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         logits, values, state = self.connectome(obs, return_neural_state=True)
         self.neural_state_cache = state.detach()
-        dist = CategoricalDistribution(action_dim=logits.shape[-1])
-        dist.proba_distribution(action_logits=logits)
+        dist = self._dist_from_logits(logits)
         actions = dist.get_actions(deterministic=deterministic)
         log_prob = dist.log_prob(actions)
         return actions, values, log_prob
 
+    def get_distribution(self, obs):
+        # SB3's predict()/_predict() route through get_distribution rather than
+        # forward(), so it must also bypass the stubbed-out mlp_extractor and
+        # build the action distribution straight from the connectome.
+        logits, _, state = self.connectome(obs, return_neural_state=True)
+        self.neural_state_cache = state.detach()
+        return self._dist_from_logits(logits)
+
     def evaluate_actions(self, obs, actions):
         logits, values, _ = self.connectome(obs)
-        dist = CategoricalDistribution(action_dim=logits.shape[-1])
-        dist.proba_distribution(action_logits=logits)
+        dist = self._dist_from_logits(logits)
         log_prob = dist.log_prob(actions)
         entropy = dist.entropy()
         return values, log_prob, entropy
@@ -92,6 +98,11 @@ class ConnectomeActorCriticPolicy(ActorCriticPolicy):
     def predict_values(self, obs):
         _, values, _ = self.connectome(obs)
         return values
+
+    def _dist_from_logits(self, logits: torch.Tensor) -> CategoricalDistribution:
+        dist = CategoricalDistribution(action_dim=logits.shape[-1])
+        dist.proba_distribution(action_logits=logits)
+        return dist
 
 
 class _Identity(nn.Module):

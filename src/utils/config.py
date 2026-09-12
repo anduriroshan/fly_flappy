@@ -25,6 +25,17 @@ class ProfileConfig:
     telemetry: Dict[str, Any]
 
     @property
+    def connectome_source(self) -> str:
+        return self.connectome["sources"][self.profile]
+
+    @property
+    def cache_path(self) -> Path:
+        # Keyed by profile + source so smoke/full and synthetic/flywire
+        # never collide on the same cache file.
+        cache_dir = Path(self.connectome["cache_dir"])
+        return cache_dir / f"{self.profile}_{self.connectome_source}.npz"
+
+    @property
     def n_neurons(self) -> int:
         return int(self.connectome["budgets"][self.profile]["neurons"])
 

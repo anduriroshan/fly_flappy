@@ -34,7 +34,7 @@ def main():
 
     # 1. Connectome
     spec = load_connectome(
-        source=cfg.connectome["source"],
+        source=cfg.connectome_source,
         n_neurons=cfg.n_neurons,
         synapses_per_neuron=cfg.synapses_per_neuron,
         cache_path=None,   # skip cache for the smoke test
@@ -78,6 +78,7 @@ def main():
         panel_w=cfg.telemetry["panel_width"],
         heatmap_neurons=cfg.telemetry["heatmap_neurons"],
         positions=spec.positions,
+        edges=(spec.rows, spec.cols, spec.weights),
         rotate_speed=cfg.telemetry.get("brain_rotate_speed", 0.02),
     )
     out_path = Path(cfg.telemetry["video_dir"]) / "smoke_test.mp4"

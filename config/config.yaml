@@ -9,22 +9,29 @@ profile: smoke   # one of: smoke | full
 
 # --------------------------- Connectome ------------------------------
 connectome:
-  # Path to a pre-processed connectome cache (.npz). Regenerated if missing.
-  cache_path: data/connectome/flywire_connectome.npz
-
-  # Source dataset. `synthetic` produces a random-but-structured graph
-  # so laptops without the ~2 GB FlyWire download can still run.
-  # `flywire` loads the real Codex export from `raw_dir`.
-  source: synthetic          # synthetic | flywire
+  # Directory for pre-processed connectome caches (.npz). Cache filename
+  # is derived as "{profile}_{source}.npz" so smoke/full and
+  # synthetic/flywire never collide or silently load the wrong graph.
+  cache_dir: data/connectome
   raw_dir: data/connectome/raw
 
-  # Neuron / synapse budget per profile. `full` uses the real ~139k.
+  # Source dataset per profile. `synthetic` produces a random-but-structured
+  # graph so laptops without the FlyWire download can still run end-to-end.
+  # `flywire` loads the real MCNS/Codex export from `raw_dir`.
+  sources:
+    smoke: synthetic
+    full: flywire
+
+  # Neuron / synapse budget per profile. `full` matches the real MCNS v1.0
+  # neuron count (166,700) — set lower here to subsample instead.
+  # synapses_per_neuron only affects the `synthetic` builder; real-data
+  # loads use however many synapses the connections table actually has.
   budgets:
     smoke:
       neurons: 2048
       synapses_per_neuron: 32
     full:
-      neurons: 139255
+      neurons: 166700
       synapses_per_neuron: 120
 
   # Fraction of neurons wired as sensory (afferent) and motor (efferent).

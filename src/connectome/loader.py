@@ -49,6 +49,11 @@ class ConnectomeSpec:
     # otherwise a fabricated bilateral-lobe layout (see geometry.py) so the
     # 3D brain viewer always has something to render.
     positions: Optional[np.ndarray] = None
+    # Real dataset body/root id per neuron index (n_neurons,), int64. This is
+    # the bridge from our 0..N-1 RL neuron indices back to real neuprint
+    # bodyIds, needed to fetch traced morphology for the offline render.
+    # None for synthetic graphs (no real neurons to map to).
+    node_ids: Optional[np.ndarray] = None
     source: str = "synthetic"
 
     def to_scipy(self) -> sparse.csr_matrix:
@@ -112,6 +117,7 @@ def _save_cache(spec: ConnectomeSpec, path: Path) -> None:
         weights=spec.weights,
         labels=spec.labels if spec.labels is not None else np.array([], dtype=object),
         positions=spec.positions if spec.positions is not None else np.array([], dtype=np.float32),
+        node_ids=spec.node_ids if spec.node_ids is not None else np.array([], dtype=np.int64),
         source=np.array(spec.source),
     )
 
@@ -120,6 +126,7 @@ def _load_cache(path: Path) -> ConnectomeSpec:
     z = np.load(path, allow_pickle=True)
     labels = z["labels"]
     positions = z["positions"] if "positions" in z else np.array([])
+    node_ids = z["node_ids"] if "node_ids" in z else np.array([])
     return ConnectomeSpec(
         n_neurons=int(z["n_neurons"]),
         rows=z["rows"],
@@ -127,6 +134,7 @@ def _load_cache(path: Path) -> ConnectomeSpec:
         weights=z["weights"],
         labels=labels if len(labels) else None,
         positions=positions if positions.size else None,
+        node_ids=node_ids if node_ids.size else None,
         source=str(z["source"]),
     )
 
@@ -194,18 +202,29 @@ def _load_flywire(raw_dir: Path, n_neurons: int, k: int, seed: int) -> Connectom
     neurons_df = pd.read_csv(neurons_csv)
     conn_df = pd.read_csv(conn_csv)
 
-    id_col = "root_id" if "root_id" in neurons_df.columns else neurons_df.columns[0]
+    # Codex/MCNS exports use human-readable "Title Case" headers (e.g. "Root
+    # ID", "Super Class"); other releases use snake_case. Try both.
+    id_col = _find(neurons_df.columns, ["root_id", "Root ID", "Root id", "id"])
     pre_col = _find(conn_df.columns, ["pre_root_id", "pre_pt_root_id", "pre"])
     post_col = _find(conn_df.columns, ["post_root_id", "post_pt_root_id", "post"])
     syn_col = _find(conn_df.columns, ["syn_count", "n_syn", "weight"])
 
     all_ids = neurons_df[id_col].to_numpy()
 
-    # Subsample if the full graph exceeds the configured budget.
-    rng = np.random.default_rng(seed)
+    # Subsample if the full graph exceeds the configured budget. Uniform
+    # random node choice thins edges quadratically (both endpoints must
+    # survive independently) — at 15k/166k neurons that drops mean synapses
+    # per neuron from ~54 to ~5. Snowball sampling grows outward from real
+    # synaptic neighbourhoods instead, preserving realistic local density.
     if n_neurons < len(all_ids):
-        keep = rng.choice(len(all_ids), n_neurons, replace=False)
-        keep_ids = all_ids[keep]
+        full_id_to_pos = {int(rid): i for i, rid in enumerate(all_ids)}
+        pre_pos_all = conn_df[pre_col].map(full_id_to_pos)
+        post_pos_all = conn_df[post_col].map(full_id_to_pos)
+        valid = pre_pos_all.notna() & post_pos_all.notna()
+        pre_pos_all = pre_pos_all[valid].to_numpy(dtype=np.int64)
+        post_pos_all = post_pos_all[valid].to_numpy(dtype=np.int64)
+        keep_pos = _snowball_sample(pre_pos_all, post_pos_all, len(all_ids), n_neurons, seed)
+        keep_ids = all_ids[keep_pos]
     else:
         keep_ids = all_ids
 
@@ -217,14 +236,33 @@ def _load_flywire(raw_dir: Path, n_neurons: int, k: int, seed: int) -> Connectom
     cols = conn_df[post_col].map(id_to_idx).to_numpy(dtype=np.int64)
     weights = conn_df[syn_col].to_numpy(dtype=np.float32)
 
-    # Optional inhibitory sign — Codex exports a `nt_type` column with the
-    # dominant neurotransmitter. GABA / Glutamate → inhibitory.
-    if "nt_type" in conn_df.columns:
-        inh = conn_df["nt_type"].isin(["GABA", "GLUT"]).to_numpy()
+    # Inhibitory sign — GABAergic/glutamatergic synapses flip negative.
+    # Prefer a populated per-connection nt_type column; several MCNS/Codex
+    # releases ship this column present but entirely empty (as filtered
+    # connection tables do), in which case fall back to the pre-synaptic
+    # neuron's *predicted* transmitter — NT identity is a per-neuron property
+    # (Dale's principle), so this is a reasonable substitute for a missing
+    # per-synapse label, and arguably more correct anyway.
+    conn_nt_col = _find(conn_df.columns, ["nt_type", "predicted_nt_type"], required=False)
+    inh = None
+    if conn_nt_col is not None and conn_df[conn_nt_col].notna().any():
+        inh = conn_df[conn_nt_col].isin(["GABA", "GLUT"]).to_numpy()
+    else:
+        neuron_nt_col = _find(
+            neurons_df.columns,
+            ["Predicted NT type", "predicted_nt_type", "nt_type"],
+            required=False,
+        )
+        if neuron_nt_col is not None:
+            nt_by_id = neurons_df.set_index(id_col)[neuron_nt_col]
+            pre_nt = conn_df[pre_col].map(nt_by_id)
+            inh = pre_nt.isin(["GABA", "GLUT"]).to_numpy()
+    if inh is not None:
         weights = np.where(inh, -weights, weights)
 
     labels = neurons_df.set_index(id_col).reindex(keep_ids)
-    label_col = "super_class" if "super_class" in labels.columns else labels.columns[0]
+    label_col = _find(labels.columns, ["super_class", "Super Class", "Super class"], required=False)
+    label_col = label_col or labels.columns[0]
     label_arr = labels[label_col].fillna("unknown").to_numpy(dtype=object)
 
     positions = _extract_positions(labels)
@@ -236,6 +274,7 @@ def _load_flywire(raw_dir: Path, n_neurons: int, k: int, seed: int) -> Connectom
         weights=weights,
         labels=label_arr,
         positions=positions,
+        node_ids=np.asarray(keep_ids, dtype=np.int64),
         source="flywire",
     )
 
@@ -262,8 +301,48 @@ def _extract_positions(neurons_df) -> Optional[np.ndarray]:
     return None
 
 
-def _find(cols, candidates):
+def _snowball_sample(pre_pos: np.ndarray, post_pos: np.ndarray, n_total: int,
+                     n_target: int, seed: int) -> np.ndarray:
+    """Pick `n_target` node positions by growing outward from random seed
+    neurons along real synaptic edges, instead of scattering independent
+    random picks. Restarts from a fresh random seed whenever the current
+    component is exhausted, so disconnected components don't stall growth.
+    """
+    ones = np.ones(pre_pos.size, dtype=np.int8)
+    adj = sparse.coo_matrix((ones, (pre_pos, post_pos)), shape=(n_total, n_total)).tocsr()
+    adj = adj.maximum(adj.T)  # treat as undirected for traversal purposes
+
+    rng = np.random.default_rng(seed)
+    visited = np.zeros(n_total, dtype=bool)
+    order: list[int] = []
+
+    while len(order) < n_target:
+        remaining = np.where(~visited)[0]
+        if remaining.size == 0:
+            break
+        seed_node = int(rng.choice(remaining))
+        visited[seed_node] = True
+        order.append(seed_node)
+        frontier = np.array([seed_node])
+
+        while frontier.size and len(order) < n_target:
+            neighbor_idx = np.unique(adj[frontier].indices)
+            neighbor_idx = neighbor_idx[~visited[neighbor_idx]]
+            if neighbor_idx.size == 0:
+                break
+            budget_left = n_target - len(order)
+            take = neighbor_idx[:budget_left]
+            visited[take] = True
+            order.extend(take.tolist())
+            frontier = take
+
+    return np.array(order[:n_target], dtype=np.int64)
+
+
+def _find(cols, candidates, required: bool = True):
     for c in candidates:
         if c in cols:
             return c
-    raise KeyError(f"None of {candidates} found in {list(cols)}")
+    if required:
+        raise KeyError(f"None of {candidates} found in {list(cols)}")
+    return None

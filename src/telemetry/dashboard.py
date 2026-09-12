@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Deque, Optional
+from typing import Deque, Optional, Tuple
 from collections import deque
 
 import cv2
@@ -33,6 +33,8 @@ class Dashboard:
     # (n_neurons, 3) anatomical positions — enables the 3D brain panel.
     positions: Optional[np.ndarray] = None
     rotate_speed: float = 0.02
+    # (rows, cols, weights) synaptic edges — enables the live pathway overlay.
+    edges: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]] = None
     # Reward history for the tiny sparkline in the telemetry panel.
     reward_history: Deque[float] = field(default_factory=lambda: deque(maxlen=120))
     _brain: Optional[Brain3DRenderer] = field(default=None, init=False, repr=False)
@@ -46,6 +48,7 @@ class Dashboard:
                 colormap=self.colormap,
                 max_points=self.heatmap_neurons,
                 rotate_speed=self.rotate_speed,
+                edges=self.edges,
             )
 
     def compose(

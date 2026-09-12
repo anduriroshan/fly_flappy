@@ -47,10 +47,21 @@ class RenderCache(gym.Wrapper):
 
 def make_env(env_id: str = "FlappyBird-v0",
              render_mode: str = "rgb_array",
-             seed: int | None = None) -> Callable[[], gym.Env]:
-    """Factory suitable for SB3 vec-env constructors."""
+             seed: int | None = None,
+             observation_mode: str = "simple") -> Callable[[], gym.Env]:
+    """Factory suitable for SB3 vec-env constructors.
+
+    `observation_mode='simple'` maps to `use_lidar=False` (12-dim physics
+    vector); flappy-bird-gymnasium defaults to `use_lidar=True` (180-dim),
+    which still works end-to-end (obs_dim is derived dynamically by the
+    policy) but doesn't match this project's "simple 2D physics variables"
+    spec, and wires 180 sensory neurons instead of a compact set.
+    """
     def _thunk() -> gym.Env:
-        env = gym.make(env_id, render_mode=render_mode)
+        kwargs = {"render_mode": render_mode}
+        if env_id.startswith("FlappyBird"):
+            kwargs["use_lidar"] = observation_mode != "simple"
+        env = gym.make(env_id, **kwargs)
         env = RenderCache(env)
         if seed is not None:
             env.reset(seed=seed)
@@ -58,9 +69,11 @@ def make_env(env_id: str = "FlappyBird-v0",
     return _thunk
 
 
-def make_vec_env(env_id: str, n_envs: int, seed: int = 0, render_mode: str = "rgb_array"):
+def make_vec_env(env_id: str, n_envs: int, seed: int = 0, render_mode: str = "rgb_array",
+                 observation_mode: str = "simple"):
     from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
-    thunks = [make_env(env_id, render_mode, seed=seed + i) for i in range(n_envs)]
+    thunks = [make_env(env_id, render_mode, seed=seed + i, observation_mode=observation_mode)
+              for i in range(n_envs)]
     # Sub-processes for 2+ envs; a single dummy env for the smoke profile.
     return SubprocVecEnv(thunks) if n_envs > 1 else DummyVecEnv(thunks)

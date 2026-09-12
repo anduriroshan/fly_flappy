@@ -2,6 +2,7 @@
 # Install: python -m pip install -r requirements.txt
 numpy>=1.24,<2.0
 scipy>=1.10
+pandas>=2.0
 pyyaml>=6.0
 tqdm>=4.65
 opencv-python>=4.8

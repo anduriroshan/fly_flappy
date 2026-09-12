@@ -21,14 +21,14 @@ def train(config_path: str = "config/config.yaml", profile: str | None = None) -
     # ---- 1. Connectome ----
     print("[fly-flappy] loading connectome...")
     spec = load_connectome(
-        source=cfg.connectome["source"],
+        source=cfg.connectome_source,
         n_neurons=cfg.n_neurons,
         synapses_per_neuron=cfg.synapses_per_neuron,
         raw_dir=cfg.connectome["raw_dir"],
-        cache_path=cfg.connectome["cache_path"],
+        cache_path=cfg.cache_path,
         seed=cfg.connectome["seed"],
     )
-    print(f"  → {spec.n_neurons} neurons, {spec.weights.size} synapses, source={spec.source}")
+    print(f"  -> {spec.n_neurons} neurons, {spec.weights.size} synapses, source={spec.source}")
 
     neuron_map = build_neuron_map(
         spec,
@@ -36,10 +36,11 @@ def train(config_path: str = "config/config.yaml", profile: str | None = None) -
         motor_fraction=cfg.connectome["motor_fraction"],
         seed=cfg.connectome["seed"],
     )
-    print(f"  → {neuron_map.n_sensory} sensory neurons, {neuron_map.n_motor} motor neurons")
+    print(f"  -> {neuron_map.n_sensory} sensory neurons, {neuron_map.n_motor} motor neurons")
 
     # ---- 2. Env ----
-    vec_env = make_vec_env(cfg.env["id"], n_envs=cfg.n_envs)
+    vec_env = make_vec_env(cfg.env["id"], n_envs=cfg.n_envs,
+                           observation_mode=cfg.env.get("observation_mode", "simple"))
 
     # ---- 3. Policy ----
     policy_kwargs = dict(
@@ -73,6 +74,7 @@ def train(config_path: str = "config/config.yaml", profile: str | None = None) -
             panel_w=cfg.telemetry["panel_width"],
             heatmap_neurons=cfg.telemetry["heatmap_neurons"],
             positions=spec.positions,
+            edges=(spec.rows, spec.cols, spec.weights),
             rotate_speed=cfg.telemetry.get("brain_rotate_speed", 0.02),
             verbose=1,
         ))
@@ -84,5 +86,5 @@ def train(config_path: str = "config/config.yaml", profile: str | None = None) -
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     out = ckpt_dir / f"ppo_connectome_{cfg.profile}.zip"
     model.save(out)
-    print(f"[fly-flappy] saved model → {out}")
+    print(f"[fly-flappy] saved model -> {out}")
     return out

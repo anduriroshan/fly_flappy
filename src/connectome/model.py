@@ -76,11 +76,34 @@ class ConnectomeNet(nn.Module):
             "neuron_positions", torch.from_numpy(spec.positions).float(), persistent=False
         )
 
+        # Real dataset bodyId per neuron index (or an all -1 sentinel for
+        # synthetic graphs). Persisted so a reloaded checkpoint can map its
+        # RL neuron indices back to real neuprint neurons for the offline
+        # morphology render.
+        node_ids = spec.node_ids if spec.node_ids is not None else np.full(self.n_neurons, -1, dtype=np.int64)
+        self.register_buffer(
+            "neuron_ids", torch.from_numpy(np.asarray(node_ids, dtype=np.int64)), persistent=True
+        )
+
     # ---------- properties ----------
     @property
     def sparsity(self) -> float:
         nnz = self._syn_values.numel()
         return 1.0 - nnz / (self.n_neurons * self.n_neurons)
+
+    @property
+    def has_real_ids(self) -> bool:
+        return bool((self.neuron_ids >= 0).any())
+
+    def get_synapse_edges(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return (pre_idx, post_idx, weight) numpy arrays — same convention
+        as ConnectomeSpec.rows/cols/weights. Lets telemetry code (which only
+        has the reloaded policy, not the original spec) recover the edge
+        list for the synaptic-pathway visualization."""
+        idx = self._syn_indices.detach().cpu().numpy()
+        post, pre = idx[0], idx[1]
+        weights = self._syn_values.detach().cpu().numpy()
+        return pre, post, weights
 
     def _syn_matrix(self) -> torch.Tensor:
         # We built _syn_indices from arange() in constructor order, so the
@@ -108,6 +131,9 @@ class ConnectomeNet(nn.Module):
         value         : (B, 1)
         neural_state  : (B, n_neurons) or None
         """
+        # Gym envs commonly hand back float64 observations; our weights are
+        # float32, and torch.nn.Linear requires matching dtypes.
+        obs = obs.to(dtype=self.sensory_proj.weight.dtype)
         B = obs.shape[0]
         device = obs.device
         W = self._syn_matrix()

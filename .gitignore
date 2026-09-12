@@ -227,6 +227,7 @@ data/connectome/*.npz
 runs/checkpoints/*
 runs/videos/*
 runs/tb/*
+runs/morphology/*
 !runs/**/.gitkeep
 
 # Editor

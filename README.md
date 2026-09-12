@@ -108,6 +108,73 @@ fabricated bilateral two-lobe layout stands in so the viewer still reads as
 "a brain." Pure NumPy + OpenCV (vectorised scatter + one Gaussian blur), no
 OpenGL/EGL context required — safe under Docker/Xvfb.
 
+## Offline research-grade morphology render (real traced neurons)
+
+The live telemetry panel above is fast but stylized (points, not traced
+morphology). For the Janelia/neuVid-style visualization — **real traced
+neuron skeletons in the actual CNS shape (optic lobes + central brain +
+ventral nerve cord), lighting up frame-by-frame as the agent plays** — use
+the offline Blender pipeline in [src/morphology/](src/morphology/) +
+[blender/render_activation.py](blender/render_activation.py).
+
+This is a post-training step, not live: full traced morphology can't be
+rendered per training step (the research videos are offline renders too).
+
+### Prerequisites
+
+1. Train with `connectome.source: flywire` so neurons carry real MCNS
+   bodyIds (synthetic graphs can't map to real skeletons).
+2. A free [neuprint](https://neuprint.janelia.org) account + API token:
+   ```bash
+   export NEUPRINT_TOKEN=<your token from the account page>
+   ```
+3. Render extras + Blender (Blender is a separate, non-pip install):
+   ```bash
+   pip install -r requirements-render.txt
+   bash scripts/setup_blender.sh          # portable Blender, no root needed
+   export BLENDER_BIN=$(cat .blender_bin)
+   ```
+
+### Headless GPU boxes (Vast.ai etc.)
+
+Blender runs fine headless — it's a portable binary, no root/apt/GUI. The one
+gotcha is the **render engine**:
+
+- **Cycles (default here)** renders fully headless on the GPU via OptiX/CUDA
+  with **no display and no Xvfb**. Use this on Vast.ai.
+- **EEVEE** is faster but on headless Linux needs **EGL** (Xvfb is *not*
+  enough — OpenGL isn't invoked under a virtual display). Only pass
+  `--engine BLENDER_EEVEE` if you've set up EGL.
+
+`scripts/setup_blender.sh` downloads a portable Blender and prints a one-liner
+to confirm the GPU is visible to Cycles. Always do a `--dry-run` first (renders
+a single still) to catch GPU/skeleton/material issues before the full animation.
+
+### Three steps
+
+```bash
+# 1. Record the connectome's activation over a rollout (CPU ok, no token).
+#    Spotlights motor + sensory + a fill sample, capped by --max-neurons.
+python -m scripts.record_activation --profile full \
+    --checkpoint runs/checkpoints/ppo_connectome_full.zip \
+    --out runs/morphology/activation.npz --steps 900 --max-neurons 400
+
+# 2+3. Fetch real skeletons/neuropil meshes from neuprint, then render in
+#      Blender. (Orchestrated; each stage is skippable via --skip-fetch /
+#      --skip-render for iteration.)
+python -m scripts.render_morphology \
+    --recording runs/morphology/activation.npz \
+    --out runs/videos/morphology.mp4 --engine BLENDER_EEVEE
+```
+
+`--max-neurons` matters: rendering full traced morphology is only feasible
+for hundreds of neurons, so the recorder captures a spotlight subset (all
+motor + sensory neurons, then a random fill) rather than all ~166k.
+
+Data flow: `record_activation` → `activation.npz` (per-neuron timeseries
+keyed to real bodyIds) → `neuprint_fetch` → `skeletons/*.swc` +
+`neuropil/*.obj` → Blender keyframes emission per neuron → `morphology.mp4`.
+
 ## Architecture in one paragraph
 
 Observations from Flappy Bird's 12-dim state vector are projected onto

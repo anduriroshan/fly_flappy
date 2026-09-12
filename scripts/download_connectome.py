@@ -37,7 +37,7 @@ def main():
         if out.exists():
             print(f"[skip] {out} already exists")
             continue
-        print(f"[download] {url} → {out}")
+        print(f"[download] {url} -> {out}")
         try:
             urllib.request.urlretrieve(url, out)
         except Exception as e:
