@@ -216,3 +216,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---- fly-flappy project-specific ----
+# Data
+data/connectome/raw/*
+data/connectome/*.npz
+!data/connectome/.gitkeep
+
+# Run outputs
+runs/checkpoints/*
+runs/videos/*
+runs/tb/*
+!runs/**/.gitkeep
+
+# Editor
+.idea/
+*.swp

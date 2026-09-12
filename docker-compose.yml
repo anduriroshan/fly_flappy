@@ -1,0 +1,35 @@
+# Bring up the training container with GPU passthrough.
+# Requires: nvidia-container-toolkit installed on the host.
+#   docker compose up train      # runs the full profile
+#   docker compose run --rm smoke   # runs the CPU smoke test inside the image
+services:
+  train:
+    build: .
+    image: fly-flappy:latest
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+      - CUDA_VISIBLE_DEVICES=0
+    shm_size: "8gb"                 # SB3 SubprocVecEnv needs a decent shm
+    volumes:
+      - ./data:/workspace/fly_flappy/data
+      - ./runs:/workspace/fly_flappy/runs
+      - ./config:/workspace/fly_flappy/config
+    command: ["python", "-m", "scripts.train", "--profile", "full"]
+
+  smoke:
+    image: fly-flappy:latest
+    volumes:
+      - ./data:/workspace/fly_flappy/data
+      - ./runs:/workspace/fly_flappy/runs
+      - ./config:/workspace/fly_flappy/config
+    command: ["python", "-m", "scripts.smoke_test"]
+
+  tensorboard:
+    image: fly-flappy:latest
+    ports:
+      - "6006:6006"
+    volumes:
+      - ./runs:/workspace/fly_flappy/runs
+    entrypoint: ["tensorboard", "--logdir", "/workspace/fly_flappy/runs/tb", "--host", "0.0.0.0"]
