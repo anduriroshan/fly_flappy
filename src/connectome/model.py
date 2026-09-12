@@ -9,9 +9,12 @@ Simulation model per env step:
        always frozen — the biology stays intact.
     3. Read out motor-neuron activations → project to action logits & value.
 
-Sparse GEMM (torch.sparse.mm) keeps the 139k-neuron matrix tractable on a
-single GPU. On CPU laptops with the smoke budget (~2k neurons), the same
-code path runs unmodified.
+The sparse propagation goes through `sparse_ops.sparse_synapse_drive`, a
+custom autograd op whose backward computes the synapse-weight gradient only
+at the real edges — the builtin torch.sparse.mm backward would allocate a
+dense n x n gradient and OOM at the full ~166k-neuron MCNS scale. On CPU
+laptops with the smoke budget (~2k neurons), the same code path runs
+unmodified.
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ import torch.nn as nn
 
 from .loader import ConnectomeSpec
 from .mapping import NeuronMap
+from .sparse_ops import sparse_synapse_drive
 
 
 class ConnectomeNet(nn.Module):
@@ -46,9 +50,17 @@ class ConnectomeNet(nn.Module):
         # ---- Sparse synapse matrix ----
         idx = torch.from_numpy(np.stack([spec.cols, spec.rows], axis=0)).long()
         vals = torch.from_numpy(spec.weights).float()
-        # Torch requires sorted indices for coalesce()
-        self._syn_indices = nn.Parameter(idx, requires_grad=False)
-        self._syn_values = nn.Parameter(vals, requires_grad=train_synapses)
+        # Coalesce ONCE here — merges any duplicate (pre, post) pairs (real
+        # data can have the same pair connected across multiple neuropils)
+        # and sorts indices into canonical order. Without this, forward()
+        # was re-running .coalesce() over the full edge list on every single
+        # call (~45% of forward cost at full scale) even though the
+        # topology never changes after construction.
+        coalesced = torch.sparse_coo_tensor(
+            idx, vals, size=(self.n_neurons, self.n_neurons), check_invariants=False
+        ).coalesce()
+        self._syn_indices = nn.Parameter(coalesced.indices(), requires_grad=False)
+        self._syn_values = nn.Parameter(coalesced.values(), requires_grad=train_synapses)
 
         # ---- Sensory input projection ----
         # A learnable MLP that expands the obs vector to `n_sensory` currents.
@@ -105,16 +117,6 @@ class ConnectomeNet(nn.Module):
         weights = self._syn_values.detach().cpu().numpy()
         return pre, post, weights
 
-    def _syn_matrix(self) -> torch.Tensor:
-        # We built _syn_indices from arange() in constructor order, so the
-        # tensor is safe; disable the invariant check to silence the warning
-        # and skip its non-trivial CPU cost on every forward.
-        return torch.sparse_coo_tensor(
-            self._syn_indices, self._syn_values,
-            size=(self.n_neurons, self.n_neurons),
-            check_invariants=False,
-        ).coalesce()
-
     # ---------- forward ----------
     def forward(
         self,
@@ -136,7 +138,6 @@ class ConnectomeNet(nn.Module):
         obs = obs.to(dtype=self.sensory_proj.weight.dtype)
         B = obs.shape[0]
         device = obs.device
-        W = self._syn_matrix()
 
         # Build the per-batch input current. Scatter the projected obs
         # vector into the `n_sensory` slots of a zeroed neuron vector.
@@ -146,9 +147,12 @@ class ConnectomeNet(nn.Module):
 
         v = torch.zeros(B, self.n_neurons, device=device, dtype=obs.dtype)
         for _ in range(self.sim_steps):
-            # torch.sparse.mm expects (N, K) dense — transpose to (n_neurons, B),
-            # multiply, transpose back.
-            drive = torch.sparse.mm(W, v.t()).t()
+            # Custom sparse op: memory-safe backward w.r.t. synapse weights
+            # (the builtin torch.sparse.mm backward would OOM on a dense n x n
+            # gradient at full connectome scale). See sparse_ops.py.
+            drive = sparse_synapse_drive(
+                self._syn_values, self._syn_indices, v, self.n_neurons
+            )
             v = (1.0 - self.leak) * v + self.act_fn(drive + input_current)
 
         motor_activity = v.index_select(1, self.motor_idx)            # (B, n_motor)

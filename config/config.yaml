@@ -22,10 +22,16 @@ connectome:
     smoke: synthetic
     full: flywire
 
-  # Neuron / synapse budget per profile. `full` matches the real MCNS v1.0
-  # neuron count (166,700) — set lower here to subsample instead.
-  # synapses_per_neuron only affects the `synthetic` builder; real-data
-  # loads use however many synapses the connections table actually has.
+  # Neuron / synapse budget per profile. `full` = the real MCNS v1.0 neuron
+  # count (166,700, ~6.2M synapses after coalescing). Training the full graph
+  # with learnable synapses is only feasible thanks to the custom sparse
+  # backward in sparse_ops.py (the builtin would need a 111 GB dense n^2
+  # gradient). It REQUIRES a GPU — on CPU a single fwd+bwd is ~107s. Calibrate
+  # wall-clock on your GPU box (short run) before committing to a long rental;
+  # if per-step time is too high, subsample by lowering `neurons` here (snowball
+  # sampling keeps local density realistic — e.g. 30000 gives ~40 syn/neuron).
+  # synapses_per_neuron only affects the `synthetic` builder; real-data loads
+  # use however many synapses the connections table actually has.
   budgets:
     smoke:
       neurons: 2048

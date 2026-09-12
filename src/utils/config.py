@@ -30,10 +30,14 @@ class ProfileConfig:
 
     @property
     def cache_path(self) -> Path:
-        # Keyed by profile + source so smoke/full and synthetic/flywire
-        # never collide on the same cache file.
+        # Keyed by profile + source + neuron count so smoke/full,
+        # synthetic/flywire, AND different neuron budgets under the same
+        # profile+source never collide on the same cache file (two configs
+        # sharing profile="full" but different n_neurons — e.g. a scratch
+        # test config — would otherwise silently overwrite each other's
+        # cached graph).
         cache_dir = Path(self.connectome["cache_dir"])
-        return cache_dir / f"{self.profile}_{self.connectome_source}.npz"
+        return cache_dir / f"{self.profile}_{self.connectome_source}_{self.n_neurons}.npz"
 
     @property
     def n_neurons(self) -> int:
