@@ -12,6 +12,13 @@ def test_synthetic_shape():
     assert spec.rows.max() < 256
 
 
+def test_synthetic_positions_populated():
+    spec = load_connectome("synthetic", n_neurons=128, synapses_per_neuron=6, cache_path=None)
+    assert spec.positions is not None
+    assert spec.positions.shape == (128, 3)
+    assert spec.positions.dtype == np.float32
+
+
 def test_mapping_disjoint():
     spec = load_connectome("synthetic", n_neurons=200, synapses_per_neuron=6, cache_path=None)
     nmap = build_neuron_map(spec, sensory_fraction=0.1, motor_fraction=0.05)
@@ -27,6 +34,7 @@ def test_forward_pass_shapes():
     assert logits.shape == (3, 2)
     assert value.shape == (3, 1)
     assert state.shape == (3, 128)
+    assert net.neuron_positions.shape == (128, 3)
 
 
 def test_gradient_flows_to_synapses():

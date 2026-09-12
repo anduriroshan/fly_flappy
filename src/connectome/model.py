@@ -69,6 +69,13 @@ class ConnectomeNet(nn.Module):
         # we know the correct device/dtype.
         self.register_buffer("_v_template", torch.zeros(self.n_neurons), persistent=False)
 
+        # 3D anatomical position per neuron — always populated by the loader
+        # (real soma coords or a fabricated bilateral-lobe layout). Consumed
+        # by the telemetry dashboard's 3D brain renderer.
+        self.register_buffer(
+            "neuron_positions", torch.from_numpy(spec.positions).float(), persistent=False
+        )
+
     # ---------- properties ----------
     @property
     def sparsity(self) -> float:

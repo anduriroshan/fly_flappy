@@ -72,6 +72,8 @@ def train(config_path: str = "config/config.yaml", profile: str | None = None) -
             panel_h=cfg.telemetry["panel_height"],
             panel_w=cfg.telemetry["panel_width"],
             heatmap_neurons=cfg.telemetry["heatmap_neurons"],
+            positions=spec.positions,
+            rotate_speed=cfg.telemetry.get("brain_rotate_speed", 0.02),
             verbose=1,
         ))
 

@@ -77,6 +77,8 @@ def main():
         panel_h=cfg.telemetry["panel_height"],
         panel_w=cfg.telemetry["panel_width"],
         heatmap_neurons=cfg.telemetry["heatmap_neurons"],
+        positions=spec.positions,
+        rotate_speed=cfg.telemetry.get("brain_rotate_speed", 0.02),
     )
     out_path = Path(cfg.telemetry["video_dir"]) / "smoke_test.mp4"
     fake_frame = (np.random.rand(288, 512, 3) * 255).astype(np.uint8)

@@ -5,7 +5,9 @@ Real-source path
 The FlyWire consortium publishes the adult female fly brain connectome via
 the Codex portal (https://codex.flywire.ai). The relevant CSV exports are:
 
-    - neurons.csv    (root_id, super_class, cell_type, side, ...)
+    - neurons.csv    (root_id, super_class, cell_type, side, ...,
+                      optionally pos_x/pos_y/pos_z soma coordinates —
+                      used for the 3D brain viewer, see _extract_positions)
     - connections.csv (pre_root_id, post_root_id, syn_count, ...)
 
 Place both under `data/connectome/raw/` and set
@@ -29,6 +31,8 @@ from typing import Optional
 import numpy as np
 from scipy import sparse
 
+from .geometry import fabricate_bilateral_positions
+
 
 @dataclass
 class ConnectomeSpec:
@@ -40,6 +44,11 @@ class ConnectomeSpec:
     weights: np.ndarray
     # Optional metadata (region/type labels, one string per neuron).
     labels: Optional[np.ndarray] = None
+    # 3D anatomical position per neuron (n_neurons, 3), float32. Real soma/
+    # nucleus coordinates when source='flywire' and Codex exports them;
+    # otherwise a fabricated bilateral-lobe layout (see geometry.py) so the
+    # 3D brain viewer always has something to render.
+    positions: Optional[np.ndarray] = None
     source: str = "synthetic"
 
     def to_scipy(self) -> sparse.csr_matrix:
@@ -66,7 +75,11 @@ def load_connectome(
     if cache_path is not None:
         cache_path = Path(cache_path)
         if cache_path.exists():
-            return _load_cache(cache_path)
+            spec = _load_cache(cache_path)
+            if spec.positions is None:  # cache predates 3D positions
+                spec.positions = fabricate_bilateral_positions(spec.n_neurons, seed)
+                _save_cache(spec, cache_path)
+            return spec
 
     if source == "synthetic":
         spec = _build_synthetic(n_neurons, synapses_per_neuron, seed)
@@ -74,6 +87,12 @@ def load_connectome(
         spec = _load_flywire(Path(raw_dir), n_neurons, synapses_per_neuron, seed)
     else:
         raise ValueError(f"Unknown connectome source: {source!r}")
+
+    if spec.positions is None:
+        # Real data without a parseable position column — fall back so the
+        # 3D viewer always has something to render (flagged via source string
+        # unchanged; only the position *layout* is fabricated here).
+        spec.positions = fabricate_bilateral_positions(spec.n_neurons, seed)
 
     if cache_path is not None:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,6 +111,7 @@ def _save_cache(spec: ConnectomeSpec, path: Path) -> None:
         cols=spec.cols,
         weights=spec.weights,
         labels=spec.labels if spec.labels is not None else np.array([], dtype=object),
+        positions=spec.positions if spec.positions is not None else np.array([], dtype=np.float32),
         source=np.array(spec.source),
     )
 
@@ -99,12 +119,14 @@ def _save_cache(spec: ConnectomeSpec, path: Path) -> None:
 def _load_cache(path: Path) -> ConnectomeSpec:
     z = np.load(path, allow_pickle=True)
     labels = z["labels"]
+    positions = z["positions"] if "positions" in z else np.array([])
     return ConnectomeSpec(
         n_neurons=int(z["n_neurons"]),
         rows=z["rows"],
         cols=z["cols"],
         weights=z["weights"],
         labels=labels if len(labels) else None,
+        positions=positions if positions.size else None,
         source=str(z["source"]),
     )
 
@@ -132,12 +154,14 @@ def _build_synthetic(n_neurons: int, k: int, seed: int) -> ConnectomeSpec:
     weights[inhibitory] *= -1.0
 
     labels = np.array([f"synthetic_{i}" for i in range(n_neurons)], dtype=object)
+    positions = fabricate_bilateral_positions(n_neurons, seed)
     return ConnectomeSpec(
         n_neurons=n_neurons,
         rows=base_rows.astype(np.int64),
         cols=base_cols.astype(np.int64),
         weights=weights,
         labels=labels,
+        positions=positions,
         source="synthetic",
     )
 
@@ -203,14 +227,39 @@ def _load_flywire(raw_dir: Path, n_neurons: int, k: int, seed: int) -> Connectom
     label_col = "super_class" if "super_class" in labels.columns else labels.columns[0]
     label_arr = labels[label_col].fillna("unknown").to_numpy(dtype=object)
 
+    positions = _extract_positions(labels)
+
     return ConnectomeSpec(
         n_neurons=len(keep_ids),
         rows=rows,
         cols=cols,
         weights=weights,
         labels=label_arr,
+        positions=positions,
         source="flywire",
     )
+
+
+def _extract_positions(neurons_df) -> Optional[np.ndarray]:
+    """Best-effort extraction of real soma/nucleus 3D coordinates from Codex.
+
+    Returns None (never raises) if no recognisable position columns exist —
+    the caller fabricates a placeholder layout in that case. Verify against
+    the current Codex export schema; column names have shifted before.
+    """
+    candidate_sets = [
+        ("pos_x", "pos_y", "pos_z"),
+        ("nucleus_x", "nucleus_y", "nucleus_z"),
+        ("soma_x", "soma_y", "soma_z"),
+        ("pt_position_x", "pt_position_y", "pt_position_z"),
+        ("x", "y", "z"),
+    ]
+    for xc, yc, zc in candidate_sets:
+        if xc in neurons_df.columns and yc in neurons_df.columns and zc in neurons_df.columns:
+            xyz = neurons_df[[xc, yc, zc]].to_numpy(dtype=np.float32)
+            if not np.isnan(xyz).all():
+                return xyz
+    return None
 
 
 def _find(cols, candidates):

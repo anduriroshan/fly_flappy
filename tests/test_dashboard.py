@@ -21,6 +21,24 @@ def test_dashboard_handles_missing_inputs():
     assert out.shape == (64, 64 * 3, 3)
 
 
+def test_dashboard_3d_brain_panel():
+    positions = np.random.randn(500, 3).astype(np.float32)
+    dash = Dashboard(panel_h=128, panel_w=128, heatmap_neurons=500, positions=positions)
+    assert dash._brain is not None
+    state = np.random.randn(500)
+    out = dash.compose(None, state, reward=0.0, step=1, action=1)
+    assert out.shape == (128, 128 * 3, 3)
+    assert out.dtype == np.uint8
+
+
+def test_dashboard_3d_brain_subsamples_large_connectomes():
+    positions = np.random.randn(5000, 3).astype(np.float32)
+    dash = Dashboard(panel_h=64, panel_w=64, heatmap_neurons=200, positions=positions)
+    state = np.random.randn(5000)
+    out = dash.compose(None, state, reward=0.0, step=1, action=0)
+    assert out.shape == (64, 64 * 3, 3)
+
+
 def test_recorder_writes_mp4(tmp_path: Path):
     dash = Dashboard(panel_h=64, panel_w=64, heatmap_neurons=16)
     path = tmp_path / "out.mp4"

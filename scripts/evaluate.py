@@ -34,10 +34,13 @@ def main():
     env = make_env(cfg.env["id"])()
     model = PPO.load(args.checkpoint, device=device)
 
+    positions = model.policy.connectome.neuron_positions.detach().cpu().numpy()
     dashboard = Dashboard(
         panel_h=cfg.telemetry["panel_height"],
         panel_w=cfg.telemetry["panel_width"],
         heatmap_neurons=cfg.telemetry["heatmap_neurons"],
+        positions=positions,
+        rotate_speed=cfg.telemetry.get("brain_rotate_speed", 0.02),
     )
     with VideoRecorder(args.out, fps=cfg.telemetry["fps"]) as rec:
         total_step = 0

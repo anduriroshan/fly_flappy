@@ -96,6 +96,18 @@ the actual FlyWire data:
 | `telemetry.enabled` | Toggles the 3-panel MP4 recording during training. |
 | `env.n_envs` | Parallel envs (per profile). SubprocVecEnv is used when >1. |
 
+## 3D brain telemetry
+
+The center panel is a live, slowly-rotating 3D point-cloud of the connectome
+([src/telemetry/brain3d.py](src/telemetry/brain3d.py)) — each neuron is a
+point at its anatomical position, brightness-coded by that step's activation.
+With `connectome.source: flywire`, positions come from the real soma/nucleus
+coordinates in the Codex export (when present — see `_extract_positions` in
+[src/connectome/loader.py](src/connectome/loader.py)); with `synthetic`, a
+fabricated bilateral two-lobe layout stands in so the viewer still reads as
+"a brain." Pure NumPy + OpenCV (vectorised scatter + one Gaussian blur), no
+OpenGL/EGL context required — safe under Docker/Xvfb.
+
 ## Architecture in one paragraph
 
 Observations from Flappy Bird's 12-dim state vector are projected onto

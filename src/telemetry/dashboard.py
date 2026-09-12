@@ -1,10 +1,14 @@
 """Three-panel training dashboard rendered with OpenCV + NumPy.
 
-    | game frame | neural heatmap | telemetry text |
+    | game frame | rotating 3D brain | telemetry text |
 
 Everything is pure NumPy arrays stitched with np.hstack so we can pipe the
 composite frame directly into VideoRecorder.write(). No GUI required —
 runs unmodified under Xvfb on a headless GPU box.
+
+The center panel is a live point-cloud render of the connectome (see
+brain3d.Brain3DRenderer) when neuron `positions` are supplied; otherwise
+it falls back to a flat grid heatmap.
 """
 from __future__ import annotations
 
@@ -16,6 +20,8 @@ from collections import deque
 import cv2
 import numpy as np
 
+from .brain3d import Brain3DRenderer
+
 
 @dataclass
 class Dashboard:
@@ -24,8 +30,23 @@ class Dashboard:
     heatmap_neurons: int = 1024
     # Colour map applied to per-neuron activations.
     colormap: int = cv2.COLORMAP_INFERNO
+    # (n_neurons, 3) anatomical positions — enables the 3D brain panel.
+    positions: Optional[np.ndarray] = None
+    rotate_speed: float = 0.02
     # Reward history for the tiny sparkline in the telemetry panel.
     reward_history: Deque[float] = field(default_factory=lambda: deque(maxlen=120))
+    _brain: Optional[Brain3DRenderer] = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.positions is not None:
+            self._brain = Brain3DRenderer(
+                self.positions,
+                panel_h=self.panel_h,
+                panel_w=self.panel_w,
+                colormap=self.colormap,
+                max_points=self.heatmap_neurons,
+                rotate_speed=self.rotate_speed,
+            )
 
     def compose(
         self,
@@ -56,6 +77,12 @@ class Dashboard:
         return cv2.resize(bgr, (self.panel_w, self.panel_h), interpolation=cv2.INTER_NEAREST)
 
     def _heatmap_panel(self, state: Optional[np.ndarray]) -> np.ndarray:
+        if self._brain is not None:
+            return self._brain.render(state)
+        return self._flat_heatmap_panel(state)
+
+    def _flat_heatmap_panel(self, state: Optional[np.ndarray]) -> np.ndarray:
+        """Fallback grid heatmap, used only when no 3D positions were supplied."""
         if state is None:
             panel = np.zeros((self.panel_h, self.panel_w, 3), dtype=np.uint8)
             cv2.putText(panel, "no neural state", (20, self.panel_h // 2),

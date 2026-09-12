@@ -77,10 +77,16 @@ telemetry:
   fps: 30
   panel_height: 512
   panel_width:  512
-  # Every N env steps, write a frame to the mp4 (1 = every step).
+  # Every N env steps, write a frame to the mp4 (1 = every step). Bump this
+  # to 200-1000+ for `full` runs — writing every step of a 5M-step run
+  # would produce an unusably long video.
   frame_stride: 1
-  # Neurons displayed in the heatmap (grid = ceil(sqrt(k))^2).
-  heatmap_neurons: 1024
+  # Max neurons rendered in the live 3D brain point-cloud. Subsampled once
+  # (fixed random subset) if the connectome has more than this — rendering
+  # is vectorised so this is a size/clarity knob, not really a perf one.
+  heatmap_neurons: 20000
+  # Radians per frame the brain camera auto-rotates.
+  brain_rotate_speed: 0.02
 
 # ----------------------------- Device --------------------------------
 device: auto   # auto | cpu | cuda | cuda:0
