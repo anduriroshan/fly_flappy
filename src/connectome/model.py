@@ -76,9 +76,13 @@ class ConnectomeNet(nn.Module):
         return 1.0 - nnz / (self.n_neurons * self.n_neurons)
 
     def _syn_matrix(self) -> torch.Tensor:
+        # We built _syn_indices from arange() in constructor order, so the
+        # tensor is safe; disable the invariant check to silence the warning
+        # and skip its non-trivial CPU cost on every forward.
         return torch.sparse_coo_tensor(
             self._syn_indices, self._syn_values,
             size=(self.n_neurons, self.n_neurons),
+            check_invariants=False,
         ).coalesce()
 
     # ---------- forward ----------
