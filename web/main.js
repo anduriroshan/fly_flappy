@@ -250,7 +250,9 @@ smoothBtn.addEventListener("click", () => {
 const colorModeBtn = el("colorModeBtn");
 colorModeBtn.addEventListener("click", () => {
   setColorMode(!byRole);
-  colorModeBtn.textContent = byRole ? "Colors: by role" : "Colors: 400 distinct neurons";
+  colorModeBtn.textContent = byRole
+    ? "Colors: by role"
+    : `Colors: ${nSpotlight} distinct neurons`;
 });
 
 (async function init() {
