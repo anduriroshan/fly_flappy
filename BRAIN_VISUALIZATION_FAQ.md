@@ -68,33 +68,41 @@ everything), and the "hot set" isn't frozen — frame to frame it overlaps
 only ~50% with itself, meaning a consistent hot core plus a shifting
 situational set that responds to the actual game state.
 
-### Cause 2 (was a bug, now fixed): sampling bias made the brain look lopsided
+### Cause 2 (known limitation): sampling bias in the training pool
 
 The real fly brain is bilaterally symmetric — well-established fact,
 independently verifiable (e.g. the Nature MCNS paper reports <0.4%
-asymmetry across the central brain). If our rendering looked lopsided,
-that could **not** be the biology.
+asymmetry across the central brain). So a lopsided-looking render is
+**not** the biology; it's something we introduced.
 
-The actual cause turned out to be on our end: we built the 20,000-neuron
-training subgraph by "snowball" sampling — BFS-expanding outward from a
-single random seed neuron through real synapses. That preserves realistic
-local synapse density (which is why we did it that way), but it biases
-the pool toward whichever hemisphere the seed happened to sit in. When
-we later drew the display subset uniformly from that biased pool, the
-lopsidedness carried through into the visualization.
+The cause is on our end: we built the 20,000-neuron training subgraph by
+"snowball" sampling — BFS-expanding outward from a **single random seed
+neuron** through real synapses. That preserves realistic local synapse
+density (why we did it that way), but it biases the pool toward whichever
+hemisphere the seed happened to sit in.
 
-Diagnosed by checking the raw skeleton x-coordinates directly: the
-distribution came out as a heavily left-skewed *unimodal* blob, with a
-long thin tail — the opposite of the *bimodal* two-hump-with-a-midline-gap
-shape a real symmetric brain has.
+Measured directly on the loaded checkpoint:
+- Soma-position skew on the x-axis (median offset from mid-range,
+  normalised by range) = **0.14** — pool median sits well to one side
+  instead of near the anatomical midline.
+- Actual rendered arbor-vertex skew (what the browser draws) = **0.21 on
+  x, 0.32 on z** — the neurons' branches extend outward even more
+  asymmetrically than their somas suggest.
 
-**Fix**: when picking which neurons to *display*, explicitly balance
-left/right coverage (split the pool at its x-median, draw evenly from
-each half, uniformizing within each half). Training is unaffected —
-this is purely a display-side selection change in `server/brain.py`
-(`_pick_bilateral`). After the fix, the same measurement now shows a
-clean bimodal distribution with a gap right at the anatomical midline
-(x=0), exactly matching the real brain's bilateral structure.
+**This cannot be fixed at the display layer.** An earlier attempt
+tried to rebalance by picking display neurons more evenly across x —
+that produced a symmetric selection of somas, but the render was still
+lopsided because the underlying pool of trained neurons genuinely has
+its arbors reaching further in one direction. You can't invent trained
+neurons on the missing side that were never in the training subgraph
+to begin with.
+
+**Real fix (deferred, requires retraining ~2 hours on GPU)**: change the
+snowball sampler in `src/connectome/loader.py::_snowball_sample` to
+start from **two bilateral seed neurons** — one on each side of the
+midline — and grow both frontiers together. That produces a symmetric
+20K subgraph the visualization can honestly reflect. Not done yet; the
+current renders are shown honestly as-is, with this known limitation.
 
 ## Why does a dense cluster still remain in specific places (even after the L/R fix)?
 
@@ -134,6 +142,8 @@ than it would be at 166,700 — but the hubs are real either way.
 "The dense hubs are real fly neuropils — anatomical regions where many
 different individually-traced neurons' branches converge — plus sensory
 neurons (which are always driven directly by the input) glow more than
-distant neurons in this shallow 4-hop network; we also had a subsampling
-bias that made one hemisphere look emptier than the other, which we've
-since fixed at the display level."
+distant neurons in this shallow 4-hop network; and there's a known
+sampling artifact making one hemisphere look emptier than the other
+(caused by seeding our 20K-neuron training subgraph from a single random
+neuron instead of two bilateral ones), which needs retraining to fix
+properly."
