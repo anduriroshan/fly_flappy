@@ -143,8 +143,12 @@ video under `runs/videos/`.
 
 ## 8. Blender setup (GPU 1, any time — doesn't need to wait for training)
 
+Skeletons are fetched from Janelia's PUBLIC GCS bucket (CC-BY, no account
+or token needed) — so the only real prerequisite here is Blender itself.
+`requirements-render.txt` (navis + neuprint-python) is only needed if you
+opt into `--skeleton-source neuprint` for neuropil meshes; skip it otherwise.
+
 ```bash
-pip install -r requirements-render.txt
 bash scripts/setup_blender.sh
 export BLENDER_BIN=$(cat .blender_bin)
 
@@ -156,19 +160,18 @@ p.compute_device_type = 'OPTIX'
 p.get_devices()
 print([d.name for d in p.devices])
 "
-
-export NEUPRINT_TOKEN=<your token from neuprint.janelia.org account page>
 ```
 
 ---
 
 ## 9. Morphology render (once training has produced a checkpoint)
 
+No neuprint token needed — skeletons come from the public GCS bucket by default.
+
 ```bash
 tmux new -s render
 source .venv/bin/activate
 export BLENDER_BIN=$(cat .blender_bin)
-export NEUPRINT_TOKEN=<your token>
 
 # record real connectome activation over a rollout (CPU-cheap, no GPU needed)
 CUDA_VISIBLE_DEVICES=1 python -m scripts.record_activation --profile full \
@@ -176,14 +179,21 @@ CUDA_VISIBLE_DEVICES=1 python -m scripts.record_activation --profile full \
     --out runs/morphology/activation.npz --steps 900 --max-neurons 400
 
 # fail-fast check: renders ONE frame, catches GPU/skeleton/material issues early
+# (fetches real skeletons from the public bucket, then renders one still)
 CUDA_VISIBLE_DEVICES=1 python -m scripts.render_morphology \
-    --recording runs/morphology/activation.npz --dry-run
+    --recording runs/morphology/activation.npz --skip-neuropil --dry-run
 
 # full render (only after the dry-run looks right)
 CUDA_VISIBLE_DEVICES=1 python -m scripts.render_morphology \
-    --recording runs/morphology/activation.npz \
+    --recording runs/morphology/activation.npz --skip-neuropil \
     --out runs/videos/morphology.mp4
 ```
+
+`--skip-neuropil` avoids the "neuropil meshes aren't in the public bucket"
+notice. If you later get a working neuprint token and want the translucent
+brain backdrop meshes, drop `--skip-neuropil` and add
+`--skeleton-source neuprint` (needs `pip install -r requirements-render.txt`
++ `export NEUPRINT_TOKEN=...`).
 
 ---
 
@@ -216,4 +226,4 @@ scp -P <PORT> root@<HOST>:~/fly_flappy/runs/checkpoints/ppo_connectome_full.zip 
 | `SDL_VIDEODRIVER` | `dummy` | headless pygame rendering, no X server needed |
 | `CUDA_VISIBLE_DEVICES` | `0` (train) / `1` (Blender) | pins each workload to one physical GPU |
 | `BLENDER_BIN` | `$(cat .blender_bin)` | set by `scripts/setup_blender.sh` |
-| `NEUPRINT_TOKEN` | your account token | required for real skeleton/mesh fetch |
+| `NEUPRINT_TOKEN` | your account token | OPTIONAL — only for `--skeleton-source neuprint` (neuropil meshes). Default skeleton fetch uses the public bucket, no token. |

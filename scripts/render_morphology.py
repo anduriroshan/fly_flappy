@@ -1,12 +1,20 @@
 """Orchestrate the offline morphology render:
 
-    activation recording  ->  neuprint skeleton/mesh fetch  ->  Blender render
+    activation recording  ->  skeleton fetch  ->  Blender render
 
-Typical use on the GPU server (after training + `export NEUPRINT_TOKEN=...`):
+Typical use on the GPU server (after training):
 
     python -m scripts.render_morphology \
         --recording runs/morphology/activation.npz \
         --out runs/videos/morphology.mp4
+
+Skeleton source defaults to `gcs` — fetches directly from Janelia's public,
+CC-BY-licensed GCS bucket (the same one Neuroglancer streams from
+client-side). No account, no token, no `pip install -r requirements-render`
+needed for this path; verified working end-to-end 2026-09-13. Pass
+`--skeleton-source neuprint` to use navis + neuprint-python instead (needs
+NEUPRINT_TOKEN + the render extras) — mainly useful for neuropil ROI
+meshes, which aren't in the public skeleton bucket.
 
 Each stage can be skipped so you can iterate on just the render:
 
@@ -37,6 +45,9 @@ def main():
     ap.add_argument("--neuropil-dir", default="runs/morphology/neuropil")
     ap.add_argument("--out", default="runs/videos/morphology.mp4")
     ap.add_argument("--dataset", default="male-cns:v1.0")
+    ap.add_argument("--skeleton-source", default="gcs", choices=["gcs", "neuprint"],
+                    help="'gcs' (default): public bucket, no token needed. "
+                         "'neuprint': navis + neuprint-python, needs NEUPRINT_TOKEN.")
     ap.add_argument("--skip-fetch", action="store_true")
     ap.add_argument("--skip-neuropil", action="store_true")
     ap.add_argument("--skip-render", action="store_true")
@@ -59,15 +70,23 @@ def main():
         sys.exit("Recording has no real bodyIds (synthetic connectome) — "
                  "re-record with a flywire-source connectome.")
 
-    # ---- Stage 1: fetch skeletons + neuropil meshes ----
+    # ---- Stage 1: fetch skeletons (+ neuropil meshes, neuprint only) ----
     if not args.skip_fetch:
-        from src.morphology.neuprint_fetch import (
-            get_client, fetch_skeletons_swc, fetch_neuropil_meshes,
-        )
-        client = get_client(dataset=args.dataset)
-        fetch_skeletons_swc(real_ids.tolist(), args.swc_dir, client=client)
-        if not args.skip_neuropil:
-            fetch_neuropil_meshes(args.neuropil_dir, client=client)
+        if args.skeleton_source == "gcs":
+            from src.morphology.gcs_fetch import fetch_skeletons_swc
+            fetch_skeletons_swc(real_ids.tolist(), args.swc_dir)
+            if not args.skip_neuropil:
+                print("[render] neuropil meshes aren't in the public GCS bucket — "
+                      "skipping (use --skeleton-source neuprint for those, or pass "
+                      "--skip-neuropil to silence this)")
+        else:
+            from src.morphology.neuprint_fetch import (
+                get_client, fetch_skeletons_swc, fetch_neuropil_meshes,
+            )
+            client = get_client(dataset=args.dataset)
+            fetch_skeletons_swc(real_ids.tolist(), args.swc_dir, client=client)
+            if not args.skip_neuropil:
+                fetch_neuropil_meshes(args.neuropil_dir, client=client)
     else:
         print("[render] --skip-fetch: reusing existing SWC/OBJ files")
 

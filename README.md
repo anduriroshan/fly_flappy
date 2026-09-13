@@ -147,16 +147,25 @@ rendered per training step (the research videos are offline renders too).
 
 1. Train with `connectome.source: flywire` so neurons carry real MCNS
    bodyIds (synthetic graphs can't map to real skeletons).
-2. A free [neuprint](https://neuprint.janelia.org) account + API token:
+2. Blender (a separate, non-pip install):
    ```bash
-   export NEUPRINT_TOKEN=<your token from the account page>
-   ```
-3. Render extras + Blender (Blender is a separate, non-pip install):
-   ```bash
-   pip install -r requirements-render.txt
    bash scripts/setup_blender.sh          # portable Blender, no root needed
    export BLENDER_BIN=$(cat .blender_bin)
    ```
+
+That's it for the default path — skeletons are fetched directly from
+Janelia's public, CC-BY-licensed GCS bucket (the same one Neuroglancer
+streams from client-side), no account or token needed. Verified working
+end-to-end. Only needs `requests`, already a core dependency.
+
+**Optional** — if you want neuropil ROI meshes (the translucent brain
+backdrop; not published in the public skeleton bucket) or specifically
+want neuprint's own access path:
+```bash
+pip install -r requirements-render.txt   # navis + neuprint-python
+export NEUPRINT_TOKEN=<your token from https://neuprint.janelia.org/account>
+python -m scripts.render_morphology --skeleton-source neuprint ...
+```
 
 ### Headless GPU boxes (Vast.ai etc.)
 
@@ -182,12 +191,12 @@ python -m scripts.record_activation --profile full \
     --checkpoint runs/checkpoints/ppo_connectome_full.zip \
     --out runs/morphology/activation.npz --steps 900 --max-neurons 400
 
-# 2+3. Fetch real skeletons/neuropil meshes from neuprint, then render in
-#      Blender. (Orchestrated; each stage is skippable via --skip-fetch /
-#      --skip-render for iteration.)
+# 2+3. Fetch real skeletons from the public GCS bucket (no token), then
+#      render in Blender with Cycles (headless-safe default). Orchestrated;
+#      each stage is skippable via --skip-fetch / --skip-render.
 python -m scripts.render_morphology \
-    --recording runs/morphology/activation.npz \
-    --out runs/videos/morphology.mp4 --engine BLENDER_EEVEE
+    --recording runs/morphology/activation.npz --skip-neuropil \
+    --out runs/videos/morphology.mp4
 ```
 
 `--max-neurons` matters: rendering full traced morphology is only feasible
@@ -195,8 +204,8 @@ for hundreds of neurons, so the recorder captures a spotlight subset (all
 motor + sensory neurons, then a random fill) rather than all ~166k.
 
 Data flow: `record_activation` → `activation.npz` (per-neuron timeseries
-keyed to real bodyIds) → `neuprint_fetch` → `skeletons/*.swc` +
-`neuropil/*.obj` → Blender keyframes emission per neuron → `morphology.mp4`.
+keyed to real bodyIds) → `gcs_fetch` (public bucket, no token) →
+`skeletons/*.swc` → Blender keyframes emission per neuron → `morphology.mp4`.
 
 ## Architecture in one paragraph
 
