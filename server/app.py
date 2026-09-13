@@ -29,7 +29,7 @@ BRAIN_JSON = ROOT / "runs" / "web" / "brain.json"
 
 CHECKPOINT = os.environ.get("FLY_CHECKPOINT", "runs/checkpoints/ppo_connectome_full.zip")
 PROFILE = os.environ.get("FLY_PROFILE", "full")
-MAX_NEURONS = int(os.environ.get("FLY_MAX_NEURONS", "400"))
+MAX_NEURONS = int(os.environ.get("FLY_MAX_NEURONS", "2000"))
 TARGET_FPS = float(os.environ.get("FLY_FPS", "30"))
 
 app = FastAPI(title="fly-flappy")
@@ -44,11 +44,16 @@ def _startup() -> None:
     ckpt = CHECKPOINT if Path(CHECKPOINT).is_absolute() else str(ROOT / CHECKPOINT)
     _session = BrainSession(ckpt, profile=PROFILE, max_neurons=MAX_NEURONS)
 
-    if BRAIN_JSON.exists():
+    cached = json.loads(BRAIN_JSON.read_text()) if BRAIN_JSON.exists() else None
+    if cached is not None and cached.get("n_spotlight") == MAX_NEURONS:
         print(f"[app] using cached brain morphology -> {BRAIN_JSON}")
-        _brain = json.loads(BRAIN_JSON.read_text())
+        _brain = cached
     else:
-        print("[app] building brain morphology (first run, fetches skeletons)...")
+        if cached is not None:
+            print(f"[app] cached brain.json was built for {cached.get('n_spotlight')} neurons, "
+                  f"but FLY_MAX_NEURONS={MAX_NEURONS} now — rebuilding...")
+        else:
+            print("[app] building brain morphology (first run, fetches skeletons)...")
         _brain = _session.build_brain_json(out_json=BRAIN_JSON)
     print(f"[app] ready — open http://127.0.0.1:8000")
 

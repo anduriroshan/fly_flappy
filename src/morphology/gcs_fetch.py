@@ -105,31 +105,57 @@ def write_swc(body_id: int, vertices: np.ndarray, edges: np.ndarray, out_path: P
             fh.write(f"{node_id} 0 {x:.2f} {y:.2f} {z:.2f} {default_radius:.1f} {parent_id}\n")
 
 
-def fetch_skeletons_swc(body_ids: Iterable[int], out_dir: str | Path) -> dict[int, Path]:
+def fetch_skeletons_swc(body_ids: Iterable[int], out_dir: str | Path,
+                        max_workers: int = 24) -> dict[int, Path]:
     """Public-bucket equivalent of neuprint_fetch.fetch_skeletons_swc — same
     signature/return convention, no token required. Skips bodyIds that
     already have a cached SWC, and logs (without raising) any bodyId with
-    no published skeleton rather than aborting the whole batch."""
+    no published skeleton rather than aborting the whole batch.
+
+    Fetches concurrently (thread pool) — this is a latency-bound HTTP GET
+    per neuron (~870ms measured, mostly network round-trip, not payload
+    size), so sequential fetching of a few thousand neurons takes tens of
+    minutes for no reason; concurrent requests to the same public bucket
+    cut that down substantially. Each worker writes to its own output file
+    (no shared state to race on) and any single failure is isolated.
+    """
+    import concurrent.futures
+
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     written: dict[int, Path] = {}
     body_ids = [int(b) for b in body_ids if int(b) >= 0]
-    for i, bid in enumerate(body_ids):
+
+    todo = []
+    for bid in body_ids:
         p = out_dir / f"{bid}.swc"
         if p.exists():
             written[bid] = p
-            continue
-        try:
-            vertices, edges = fetch_skeleton_raw(bid)
-            write_swc(bid, vertices, edges, p)
-            written[bid] = p
-        except requests.HTTPError as e:
-            print(f"[gcs] bodyId {bid}: no published skeleton ({e.response.status_code}), skipping")
-        except Exception as e:
-            print(f"[gcs] bodyId {bid}: fetch/parse failed ({e}), skipping")
-        if (i + 1) % 50 == 0:
-            print(f"[gcs] {i + 1}/{len(body_ids)} processed, {len(written)} written")
+        else:
+            todo.append(bid)
+
+    def _fetch_one(bid: int):
+        p = out_dir / f"{bid}.swc"
+        vertices, edges = fetch_skeleton_raw(bid)
+        write_swc(bid, vertices, edges, p)
+        return bid, p
+
+    done = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_fetch_one, bid): bid for bid in todo}
+        for fut in concurrent.futures.as_completed(futures):
+            bid = futures[fut]
+            try:
+                bid, p = fut.result()
+                written[bid] = p
+            except requests.HTTPError as e:
+                print(f"[gcs] bodyId {bid}: no published skeleton ({e.response.status_code}), skipping")
+            except Exception as e:
+                print(f"[gcs] bodyId {bid}: fetch/parse failed ({e}), skipping")
+            done += 1
+            if done % 100 == 0:
+                print(f"[gcs] {done}/{len(todo)} processed, {len(written)} written so far")
 
     print(f"[gcs] wrote {len(written)}/{len(body_ids)} skeletons -> {out_dir} (public bucket, no auth)")
     return written

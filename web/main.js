@@ -247,6 +247,11 @@ smoothBtn.addEventListener("click", () => {
   smoothGlow = !smoothGlow;
   smoothBtn.textContent = `Smoothed glow: ${smoothGlow ? "ON" : "OFF"}`;
 });
+const colorModeBtn = el("colorModeBtn");
+colorModeBtn.addEventListener("click", () => {
+  setColorMode(!byRole);
+  colorModeBtn.textContent = byRole ? "Colors: by role" : "Colors: 400 distinct neurons";
+});
 
 (async function init() {
   setStatus("loading brain morphology…");
