@@ -63,6 +63,13 @@ def parse_args():
     ap.add_argument("--dry-run", action="store_true",
                     help="Render only the middle frame as a PNG, to validate "
                          "setup (GPU, skeletons, materials) before the full run.")
+    ap.add_argument("--gpu-index", type=int, default=None,
+                    help="Which GPU device (by index within Blender's own GPU "
+                         "device list, NOT necessarily nvidia-smi order) to use. "
+                         "CUDA_VISIBLE_DEVICES does not restrict this list, so on "
+                         "a multi-GPU box shared with another process (e.g. "
+                         "training), pick explicitly rather than trusting the "
+                         "default (last device in the list).")
     return ap.parse_args(argv)
 
 
@@ -96,7 +103,7 @@ def configure_render(scene, args):
 
     if args.engine == "CYCLES":
         scene.cycles.samples = args.samples
-        _enable_gpu(scene)
+        _enable_gpu(scene, gpu_index=args.gpu_index)
     else:
         # EEVEE path (needs EGL on headless). Its native bloom is a bonus on
         # top of the compositor glare we add below.
@@ -133,29 +140,47 @@ def add_glow_compositor(scene, threshold: float = 0.25):
     nt.links.new(glare.outputs["Image"], comp.inputs["Image"])
 
 
-def _enable_gpu(scene):
-    """Enable a GPU backend for Cycles, trying OptiX (RTX) then CUDA. On
-    Vast.ai this needs no display — Cycles talks to the GPU directly."""
+def _enable_gpu(scene, gpu_index: int | None = None):
+    """Enable exactly ONE GPU device for Cycles -- never all matching ones.
+
+    CUDA_VISIBLE_DEVICES does NOT reliably restrict Blender's own OptiX/CUDA
+    device enumeration (confirmed: Blender still lists every physical GPU on
+    the box regardless of that env var). So on a multi-GPU box where another
+    process (e.g. RL training) owns a different physical GPU, enabling every
+    device of the chosen backend type would contend with it for VRAM/compute.
+    This selects one specific device by index within the GPU-only list
+    instead of trusting env-var filtering.
+    """
     try:
         prefs = bpy.context.preferences.addons["cycles"].preferences
-        chosen = None
+        chosen_backend = None
+        gpu_devices = []
         for backend in ("OPTIX", "CUDA"):
             try:
                 prefs.compute_device_type = backend
                 prefs.get_devices()
-                if any(d.type == backend for d in prefs.devices):
-                    chosen = backend
+                gpu_devices = [d for d in prefs.devices if d.type == backend]
+                if gpu_devices:
+                    chosen_backend = backend
                     break
             except Exception:
                 continue
-        if chosen is None:
+        if chosen_backend is None:
             print("[blender] no CUDA/OptiX GPU found; rendering on CPU")
             scene.cycles.device = "CPU"
             return
+
+        idx = gpu_index if gpu_index is not None else len(gpu_devices) - 1
+        idx = max(0, min(idx, len(gpu_devices) - 1))
+        target = gpu_devices[idx]
+
         for d in prefs.devices:
-            d.use = (d.type == chosen or d.type == "CPU")
+            d.use = (d is target)   # exactly one device, nothing else
         scene.cycles.device = "GPU"
-        print(f"[blender] Cycles GPU backend: {chosen}")
+        print(f"[blender] Cycles device[{idx}] of {len(gpu_devices)} {chosen_backend} "
+              f"devices found: {target.name!r} -- verify with nvidia-smi during "
+              f"render that ONLY this device's utilization/VRAM changes, not the "
+              f"one your training job is using")
     except Exception as e:
         print(f"[blender] GPU enable failed, falling back to CPU: {e}")
         scene.cycles.device = "CPU"

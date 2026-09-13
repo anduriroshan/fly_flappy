@@ -58,6 +58,11 @@ def main():
     ap.add_argument("--frame-stride", type=int, default=1)
     ap.add_argument("--dry-run", action="store_true",
                     help="Render a single frame to fail fast on setup issues.")
+    ap.add_argument("--gpu-index", type=int, default=None,
+                    help="Which GPU (by index in Blender's own device list, NOT "
+                         "nvidia-smi order -- CUDA_VISIBLE_DEVICES does not "
+                         "restrict Blender's enumeration) to render with. Set "
+                         "this explicitly on a box shared with a training job.")
     args = ap.parse_args()
 
     rec_path = Path(args.recording)
@@ -107,6 +112,8 @@ def main():
     ]
     if args.dry_run:
         cmd += ["--dry-run"]
+    if args.gpu_index is not None:
+        cmd += ["--gpu-index", str(args.gpu_index)]
     if not args.skip_neuropil and Path(args.neuropil_dir).exists():
         cmd += ["--neuropil-dir", str(args.neuropil_dir)]
 
