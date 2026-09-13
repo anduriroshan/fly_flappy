@@ -148,6 +148,13 @@ or token needed) — so the only real prerequisite here is Blender itself.
 `requirements-render.txt` (navis + neuprint-python) is only needed if you
 opt into `--skeleton-source neuprint` for neuropil meshes; skip it otherwise.
 
+`setup_blender.sh` runs `apt-get install` for a handful of X11/graphics
+shared libraries (`libsm6`, `libxext6`, etc.) that Blender's binary is
+dynamically linked against — needed even in headless `--background` mode
+with no display, since the dynamic linker resolves them at process
+startup regardless of whether the display code path ever runs. This is
+automatic now; you'll just see apt output scroll by.
+
 ```bash
 bash scripts/setup_blender.sh
 export BLENDER_BIN=$(cat .blender_bin)

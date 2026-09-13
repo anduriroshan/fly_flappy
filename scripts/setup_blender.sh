@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Install a portable Blender on a headless GPU box (Vast.ai etc.).
-# No root / apt needed — Blender ships as a self-contained tarball.
+# The Blender binary itself is a self-contained tarball (no root needed to
+# fetch/extract it), but it's still dynamically linked against a handful of
+# X11/graphics shared libraries it needs present at load time even in
+# --background headless mode with no display ever used. Those DO need apt.
 #
 #   bash scripts/setup_blender.sh            # installs to ./third_party/blender
 #   source <(grep BLENDER_BIN ...)           # or just use the printed path
@@ -13,6 +16,20 @@ set -euo pipefail
 BLENDER_VERSION="${BLENDER_VERSION:-4.2.3}"
 BLENDER_MAJOR="${BLENDER_VERSION%.*}"     # e.g. 4.2
 DEST="${1:-third_party/blender}"
+
+echo "[setup-blender] installing shared libraries Blender needs at load time..."
+if command -v apt-get >/dev/null 2>&1; then
+    SUDO=""
+    [ "$(id -u)" != "0" ] && SUDO="sudo"
+    $SUDO apt-get update -qq
+    $SUDO apt-get install -y --no-install-recommends \
+        libsm6 libxext6 libxrender-dev libglib2.0-0 libgl1
+else
+    echo "[setup-blender] WARNING: apt-get not found. If Blender fails to start"
+    echo "  with 'error while loading shared libraries: ...', install these"
+    echo "  packages manually via your distro's package manager:"
+    echo "  libsm6 libxext6 libxrender-dev libglib2.0-0 libgl1"
+fi
 
 mkdir -p "$DEST"
 url="https://download.blender.org/release/Blender${BLENDER_MAJOR}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
