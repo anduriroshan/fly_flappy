@@ -237,3 +237,4 @@ runs/videos/*
 # Editor
 .idea/
 *.swp
+third_party/

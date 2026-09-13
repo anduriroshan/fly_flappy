@@ -37,7 +37,7 @@ connectome:
       neurons: 2048
       synapses_per_neuron: 32
     full:
-      neurons: 166700
+      neurons: 20000
       synapses_per_neuron: 120
 
   # Fraction of neurons wired as sensory (afferent) and motor (efferent).
