@@ -1,5 +1,6 @@
 # GPU-server (CUDA 12.1) requirements.
 # Install: python -m pip install -r requirements-gpu.txt
+pytest>=7.0    # `python -m pytest tests` is the verification gate in RUNBOOK.md
 numpy>=1.24,<2.0
 scipy>=1.10
 pandas>=2.0
