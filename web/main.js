@@ -106,41 +106,68 @@ function makeMaterial(n) {
   });
 }
 
+// HSL with a golden-angle hue step so consecutive neuron indices land far
+// apart on the color wheel (adjacent trees don't get near-identical hues).
+function distinctColor(i) {
+  const hue = (i * 137.508) % 360;
+  const c = new THREE.Color();
+  c.setHSL(hue / 360, 0.7, 0.55);
+  return [c.r, c.g, c.b];
+}
+
+let roleColorArr = null;
+let uniqueColorArr = null;
+let lineGeo = null;
+let byRole = true;
+
 function buildBrain(data) {
   nSpotlight = data.n_spotlight;
   brainMeta.textContent = `${data.n_rendered} traced neurons`;
 
   const positions = [];
-  const colors = [];
+  const roleColors = [];
+  const uniqueColors = [];
   const neuronIdx = [];
 
-  for (const nrn of data.neurons) {
+  data.neurons.forEach((nrn, ni) => {
     const v = nrn.verts;         // flat [x,y,z, ...]
     const e = nrn.edges;         // flat [i,j, i,j, ...]
-    const c = nrn.color;         // [r,g,b] 0..1
+    const c = nrn.color;         // [r,g,b] 0..1, by role
+    const uc = distinctColor(ni);// [r,g,b] 0..1, unique per neuron
     const ai = nrn.act_index;
     for (let k = 0; k < e.length; k += 2) {
       const a = e[k] * 3;
       const b = e[k + 1] * 3;
       positions.push(v[a], v[a + 1], v[a + 2], v[b], v[b + 1], v[b + 2]);
-      colors.push(c[0], c[1], c[2], c[0], c[1], c[2]);
+      roleColors.push(c[0], c[1], c[2], c[0], c[1], c[2]);
+      uniqueColors.push(uc[0], uc[1], uc[2], uc[0], uc[1], uc[2]);
       neuronIdx.push(ai, ai);
     }
-  }
+  });
 
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  geo.setAttribute("aNeuron", new THREE.Float32BufferAttribute(neuronIdx, 1));
+  roleColorArr = new Float32Array(roleColors);
+  uniqueColorArr = new Float32Array(uniqueColors);
+
+  lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  lineGeo.setAttribute("color", new THREE.Float32BufferAttribute(roleColorArr.slice(), 3));
+  lineGeo.setAttribute("aNeuron", new THREE.Float32BufferAttribute(neuronIdx, 1));
 
   // Center + gentle initial orientation so two lobes read clearly.
-  geo.computeBoundingSphere();
+  lineGeo.computeBoundingSphere();
   brainMat = makeMaterial(nSpotlight);
-  const lines = new THREE.LineSegments(geo, brainMat);
+  const lines = new THREE.LineSegments(lineGeo, brainMat);
   lines.rotation.x = -Math.PI / 2;   // fly CNS: bring the horizontal plane up
   scene.add(lines);
 
   resize();
+}
+
+function setColorMode(useRole) {
+  byRole = useRole;
+  if (!lineGeo) return;
+  lineGeo.attributes.color.array.set(useRole ? roleColorArr : uniqueColorArr);
+  lineGeo.attributes.color.needsUpdate = true;
 }
 
 // Smoothed mode: rise fast, fall slow — easier to read, but not literal.
