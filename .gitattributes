@@ -3,4 +3,3 @@
 # server) before clone/pull will materialize the real content instead of
 # LFS pointer stubs.
 data/connectome/raw/*.csv filter=lfs diff=lfs merge=lfs -text
-runs/videos/*.mp4 filter=lfs diff=lfs merge=lfs -text

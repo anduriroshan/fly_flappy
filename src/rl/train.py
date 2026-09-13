@@ -1,4 +1,11 @@
-"""Training entry — wired end-to-end from config → connectome → PPO."""
+"""Training entry — wired end-to-end from config → connectome → PPO.
+
+Produces a single artifact: the PPO checkpoint (`runs/checkpoints/*.zip`).
+That checkpoint is everything the web platform needs to serve live play —
+all trained synapse weights, real bodyIds, anatomical positions, and
+sensory/motor index sets are baked into it via ConnectomeNet's persistent
+buffers (see src/connectome/model.py).
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,7 +16,6 @@ from ..connectome import load_connectome, build_neuron_map
 from ..env import make_vec_env
 from ..utils import load_config, resolve_device
 from ..utils.device import describe as describe_device
-from .callbacks import DashboardCallback
 from .policy import ConnectomeActorCriticPolicy
 
 
@@ -55,7 +61,7 @@ def train(config_path: str = "config/config.yaml", profile: str | None = None) -
     )
     # TensorBoard logging is optional — SB3 hard-errors if tensorboard_log is
     # set but the package isn't installed, so only enable it when tensorboard
-    # actually imports. Keeps training runnable from the base requirements.txt.
+    # actually imports.
     tb_dir = None
     if _tensorboard_available():
         tb_dir = cfg.training["tensorboard_dir"]
@@ -78,42 +84,17 @@ def train(config_path: str = "config/config.yaml", profile: str | None = None) -
         verbose=1,
     )
 
-    callbacks = []
-    if cfg.telemetry["enabled"]:
-        video_path = Path(cfg.telemetry["video_dir"]) / f"train_{cfg.profile}.mp4"
-        callbacks.append(DashboardCallback(
-            video_path=video_path,
-            fps=cfg.telemetry["fps"],
-            frame_stride=cfg.telemetry["frame_stride"],
-            panel_h=cfg.telemetry["panel_height"],
-            panel_w=cfg.telemetry["panel_width"],
-            heatmap_neurons=cfg.telemetry["heatmap_neurons"],
-            positions=spec.positions,
-            edges=(spec.rows, spec.cols, spec.weights),
-            rotate_speed=cfg.telemetry.get("brain_rotate_speed", 0.02),
-            verbose=1,
-        ))
-
     ckpt_dir = Path(cfg.training["checkpoint_dir"])
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     out = ckpt_dir / f"ppo_connectome_{cfg.profile}.zip"
 
     print(f"[fly-flappy] starting training for {cfg.total_timesteps} steps")
     try:
-        model.learn(total_timesteps=cfg.total_timesteps, callback=callbacks)
+        model.learn(total_timesteps=cfg.total_timesteps)
     finally:
         # Ctrl+C (or any crash) during learn() skips SB3's own end-of-training
-        # dispatch, which is the only place the video recorder normally closes
-        # and the only thing that would have saved a checkpoint. Without this,
-        # an interrupted run — exactly what the calibration-run workflow in
-        # RUNBOOK.md asks you to do — loses BOTH the video (unplayable, no
-        # moov atom) and the model entirely. VideoRecorder.close() is
-        # idempotent, so this is safe even if learn() completed normally and
-        # already closed it.
-        for cb in callbacks:
-            recorder = getattr(cb, "recorder", None)
-            if recorder is not None:
-                recorder.close()
+        # save dispatch — without this, an interrupted run would lose the
+        # checkpoint entirely. Save unconditionally.
         model.save(out)
         print(f"[fly-flappy] saved model -> {out}")
     return out

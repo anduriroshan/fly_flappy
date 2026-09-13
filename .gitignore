@@ -227,15 +227,9 @@ data/connectome/*.npz
 # Run outputs
 runs/checkpoints/*
 runs/tb/*
-runs/morphology/*
 runs/web/*
 !runs/**/.gitkeep
-# runs/videos/* now ignored — training/render videos are large (multi-GB)
-# and go over Google Drive instead of Git LFS's free quota.
-runs/videos/*
-!runs/videos/.gitkeep
 
 # Editor
 .idea/
 *.swp
-third_party/
