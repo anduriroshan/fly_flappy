@@ -50,6 +50,12 @@
     <section class="brain-col">
       <h2>THE NERVOUS SYSTEM <span id="brainMeta"></span></h2>
       <div id="brainCanvas"></div>
+      <div class="brain-controls">
+        <label for="neuronSlider">
+          neurons shown: <span id="neuronSliderValue">400</span>
+        </label>
+        <input type="range" id="neuronSlider" min="50" max="2000" step="50" value="400" />
+      </div>
       <div id="status" class="status">connecting…</div>
     </section>
   </main>

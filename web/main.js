@@ -119,21 +119,54 @@ let roleColorArr = null;
 let uniqueColorArr = null;
 let lineGeo = null;
 let byRole = true;
+let visibleN = 0;        // how many neurons the slider currently reveals
+let totalNeurons = 0;    // total neurons in brain.json
+// cumulativeVertexCount[k] = total vertex count of first k neurons in the
+// (shuffled) render order. setDrawRange(0, cumulativeVertexCount[N])
+// draws exactly the first N shuffled neurons — no geometry rebuild,
+// no re-upload, one WebGL call per slider tick.
+let cumulativeVertexCount = null;
+
+// Deterministic Fisher-Yates shuffle so the same order is picked each
+// page-load (avoids the visible cluster jumping around on refresh).
+function seededShuffle(arr, seed = 1337) {
+  const a = arr.slice();
+  let s = seed;
+  const rnd = () => {
+    // xorshift32 — cheap, deterministic
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
+    return ((s >>> 0) % 1e9) / 1e9;
+  };
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 function buildBrain(data) {
   nSpotlight = data.n_spotlight;
-  brainMeta.textContent = `${data.n_rendered} traced neurons`;
+  totalNeurons = data.n_rendered;
+
+  // Shuffle the neuron render order so revealing the first N via
+  // setDrawRange gives a role-balanced random subset rather than
+  // "all motors first, then all sensories" (which is how brain.json
+  // is emitted). Each neuron's vertices stay contiguous in the buffer,
+  // so setDrawRange stays a simple offset lookup.
+  const order = seededShuffle(data.neurons.map((_, i) => i));
 
   const positions = [];
   const roleColors = [];
   const uniqueColors = [];
   const neuronIdx = [];
+  cumulativeVertexCount = new Uint32Array(totalNeurons + 1);
 
-  data.neurons.forEach((nrn, ni) => {
+  order.forEach((origIdx, renderIdx) => {
+    const nrn = data.neurons[origIdx];
     const v = nrn.verts;         // flat [x,y,z, ...]
     const e = nrn.edges;         // flat [i,j, i,j, ...]
     const c = nrn.color;         // [r,g,b] 0..1, by role
-    const uc = distinctColor(ni);// [r,g,b] 0..1, unique per neuron
+    const uc = distinctColor(origIdx);
     const ai = nrn.act_index;
     for (let k = 0; k < e.length; k += 2) {
       const a = e[k] * 3;
@@ -143,6 +176,7 @@ function buildBrain(data) {
       uniqueColors.push(uc[0], uc[1], uc[2], uc[0], uc[1], uc[2]);
       neuronIdx.push(ai, ai);
     }
+    cumulativeVertexCount[renderIdx + 1] = positions.length / 3;
   });
 
   roleColorArr = new Float32Array(roleColors);
@@ -153,14 +187,41 @@ function buildBrain(data) {
   lineGeo.setAttribute("color", new THREE.Float32BufferAttribute(roleColorArr.slice(), 3));
   lineGeo.setAttribute("aNeuron", new THREE.Float32BufferAttribute(neuronIdx, 1));
 
-  // Center + gentle initial orientation so two lobes read clearly.
   lineGeo.computeBoundingSphere();
   brainMat = makeMaterial(nSpotlight);
   const lines = new THREE.LineSegments(lineGeo, brainMat);
   lines.rotation.x = -Math.PI / 2;   // fly CNS: bring the horizontal plane up
   scene.add(lines);
 
+  setVisibleNeurons(Math.min(400, totalNeurons));   // default: 400 (less bright)
+  wireSlider();
   resize();
+}
+
+function setVisibleNeurons(n) {
+  if (!lineGeo || !cumulativeVertexCount) return;
+  visibleN = Math.max(1, Math.min(totalNeurons, n));
+  lineGeo.setDrawRange(0, cumulativeVertexCount[visibleN]);
+  brainMeta.textContent = `${visibleN} of ${totalNeurons} traced neurons`;
+  // Re-render the color-mode button label so the count matches too.
+  const btn = el("colorModeBtn");
+  if (btn && !byRole) {
+    btn.textContent = `Colors: ${visibleN} distinct neurons`;
+  }
+}
+
+function wireSlider() {
+  const slider = el("neuronSlider");
+  const label = el("neuronSliderValue");
+  if (!slider || !label) return;
+  slider.max = String(totalNeurons);
+  slider.value = String(visibleN);
+  label.textContent = String(visibleN);
+  slider.addEventListener("input", () => {
+    const n = parseInt(slider.value, 10);
+    label.textContent = String(n);
+    setVisibleNeurons(n);
+  });
 }
 
 function setColorMode(useRole) {
@@ -252,7 +313,7 @@ colorModeBtn.addEventListener("click", () => {
   setColorMode(!byRole);
   colorModeBtn.textContent = byRole
     ? "Colors: by role"
-    : `Colors: ${nSpotlight} distinct neurons`;
+    : `Colors: ${visibleN} distinct neurons`;
 });
 
 (async function init() {
