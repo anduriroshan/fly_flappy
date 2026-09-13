@@ -49,69 +49,91 @@ to see literally what the network computed that exact frame.
 
 ## Why does one region look so much brighter than the rest?
 
-This is real signal, not a bug — and it comes from network architecture,
-not from which physical "side" of the brain it is.
+This has two separate causes — one is real network behavior, one **was**
+a sampling artifact on our end that has since been fixed. Being honest
+about both is important.
 
-**Sensory neurons run hot almost by definition.** They receive the raw
-input current directly, every single frame. Everything else (motor +
-interneurons) only lights up if signal manages to propagate to it within
-just 4 internal hops (`sim_steps=4`) before the decision is made. So
-brightness roughly tracks "how many synaptic hops from the input."
-Measured over 150 live frames: **14 of the 20 most consistently-active
-neurons were sensory**, only 3 motor and 3 interneuron.
+### Cause 1 (real): sensory neurons run hot almost by definition
 
-This effect is real but *moderate*, not extreme: the hottest 5% of
-neurons hold about **10% of total activation mass** (not a single
-neuron/hub monopolizing everything), and the "hot set" isn't frozen either
-— frame to frame it overlaps only ~50% with itself, meaning there's a
-consistent hot core plus a shifting situational set that responds to the
-actual game state.
+They receive the raw input current directly, every single frame.
+Everything else (motor + interneurons) only lights up if signal manages
+to propagate to it within just 4 internal hops (`sim_steps=4`) before the
+decision is made. So brightness roughly tracks "how many synaptic hops
+from the input." Measured over 150 live frames: **14 of the 20 most
+consistently-active neurons were sensory**, only 3 motor and 3 interneuron.
 
-Important: this hop-distance effect determines *which* neurons are
-bright, but does **not** by itself explain spatial clustering — measured
-correlation between activation strength and 3D position was ~0 on every
-axis, and hot neurons are spread across the same volume as everything
-else, not bunched together.
+This effect is real but *moderate*: the hottest 5% of neurons hold about
+**10% of total activation mass** (not a single hub monopolizing
+everything), and the "hot set" isn't frozen — frame to frame it overlaps
+only ~50% with itself, meaning a consistent hot core plus a shifting
+situational set that responds to the actual game state.
 
-## So why does the bright region stay in one place even when you rotate the view?
+### Cause 2 (was a bug, now fixed): sampling bias made the brain look lopsided
 
-Because it's real 3D geometry, not a camera/projection illusion (a
-projection artifact would break apart or move as you rotate — it doesn't).
+The real fly brain is bilaterally symmetric — well-established fact,
+independently verifiable (e.g. the Nature MCNS paper reports <0.4%
+asymmetry across the central brain). If our rendering looked lopsided,
+that could **not** be the biology.
+
+The actual cause turned out to be on our end: we built the 20,000-neuron
+training subgraph by "snowball" sampling — BFS-expanding outward from a
+single random seed neuron through real synapses. That preserves realistic
+local synapse density (which is why we did it that way), but it biases
+the pool toward whichever hemisphere the seed happened to sit in. When
+we later drew the display subset uniformly from that biased pool, the
+lopsidedness carried through into the visualization.
+
+Diagnosed by checking the raw skeleton x-coordinates directly: the
+distribution came out as a heavily left-skewed *unimodal* blob, with a
+long thin tail — the opposite of the *bimodal* two-hump-with-a-midline-gap
+shape a real symmetric brain has.
+
+**Fix**: when picking which neurons to *display*, explicitly balance
+left/right coverage (split the pool at its x-median, draw evenly from
+each half, uniformizing within each half). Training is unaffected —
+this is purely a display-side selection change in `server/brain.py`
+(`_pick_bilateral`). After the fix, the same measurement now shows a
+clean bimodal distribution with a gap right at the anatomical midline
+(x=0), exactly matching the real brain's bilateral structure.
+
+## Why does a dense cluster still remain in specific places (even after the L/R fix)?
+
+Genuine biology — this part isn't an artifact and doesn't depend on
+subsampling either.
 
 Checking the actual rendered points (not just each neuron's single
 anatomical coordinate, but every point along its full traced branching
-arbor) explains it: **individual neurons' branches reach far outside their
-own central position** (the branch-point spread is roughly 2-3x wider
-than the spread of neurons' central coordinates). And critically: **75 of
-the 400 rendered neurons** all have branches passing through the same
-single dense region.
+arbor) explains it: **individual neurons' branches reach far outside
+their own central position** (the branch-point spread is roughly 2-3x
+wider than the spread of neurons' central coordinates). And critically:
+**75 of the 400 rendered neurons** (measured before we upgraded to 2,000)
+all have branches passing through the same single dense region.
 
-That's not an artifact — that's what a real neuropil looks like. In real
-insect brains, a neuron's cell body typically sits off to the side,
-connected by a single thin fiber to where it actually does its synaptic
-work: a dense hub where many *different* neurons' branches converge and
-overlap. What's rendered is 75 real, individually-traced fly neurons
-genuinely overlapping in the same real anatomical volume.
+That's what a real neuropil looks like. In real insect brains, a neuron's
+cell body typically sits off to the side, connected by a single thin
+fiber to where it actually does its synaptic work: a dense hub where many
+*different* neurons' branches converge and overlap. What's rendered is
+dozens of real, individually-traced fly neurons genuinely overlapping in
+the same real anatomical volume.
 
-## Is the clustering caused by only using 20,000 (or 400) neurons instead of the full ~166,700?
+## Is the clustering caused by using only 20,000 (or 2,000) neurons instead of the full ~166,700?
 
-**No — the hub itself isn't created by subsampling.** It's a property of
-each individual real traced neuron's actual shape (soma-far-from-arbor
-anatomy), which would be exactly the same with the full connectome.
+The dense hubs themselves aren't caused by subsampling — they'd be there
+in the full connectome too, since they're a property of each individual
+real traced neuron's actual shape (soma-far-from-arbor anatomy).
 
-**But subsampling does exaggerate the *contrast*.** With only 400 of
-~166,700 real neurons shown, the sparse peripheral regions (long,
-single-fiber projections reaching outward) have much less material to
-fill them in, so they look thinner/sparser by comparison than they would
-with the full population — while the naturally-dense hub stays
-comparatively rich even at 400. So: real biology causes the hub, but
-neuron count affects how stark the hub-vs-periphery contrast looks.
+Subsampling *does* affect two things: (1) it **exaggerated the L/R
+imbalance** described above until we fixed the picker, and (2) it makes
+sparse peripheral regions look thinner/emptier than they would with the
+full population (fewer neurons contributing long single-fiber projections
+outward), so the hub-vs-periphery contrast is somewhat starker at 2,000
+than it would be at 166,700 — but the hubs are real either way.
 
 ## Quick summary if someone asks in one sentence
 
-"The bright cluster is a real fly neuropil — a hub where many different
-real, individually-traced neurons' branches converge, seen because
-sensory-input neurons (which are always driven directly) plus their
-few-hop neighbors light up while distant neurons don't; showing fewer
-neurons makes the sparse surrounding regions look emptier by comparison,
-but doesn't create the hub itself."
+"The dense hubs are real fly neuropils — anatomical regions where many
+different individually-traced neurons' branches converge — plus sensory
+neurons (which are always driven directly by the input) glow more than
+distant neurons in this shallow 4-hop network; we also had a subsampling
+bias that made one hemisphere look emptier than the other, which we've
+since fixed at the display level."

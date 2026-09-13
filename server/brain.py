@@ -109,7 +109,16 @@ class BrainSession:
 
     def _balanced_spotlight(self, motor, sensory, max_neurons, seed):
         """~30% motor / 35% sensory / 35% interneuron, capped at max_neurons.
-        Returns (indices into the connectome, matching role labels)."""
+
+        Note on visible L/R asymmetry: the render looks lopsided because our
+        20,000-neuron training subgraph was built by BFS/snowball sampling
+        from a single seed neuron, biasing the pool toward whichever
+        hemisphere the seed sat in. Verified empirically (arbor-vertex
+        skew 0.21 on x, 0.32 on z). This CANNOT be fixed at the display
+        layer — you can't invent trained neurons on the missing side that
+        were never sampled. The real fix is retraining with bilateral
+        snowball seeds; see BRAIN_VISUALIZATION_FAQ.md for the full story.
+        """
         rng = np.random.default_rng(seed)
         motor = np.asarray(motor, dtype=np.int64)
         sensory = np.asarray(sensory, dtype=np.int64)
