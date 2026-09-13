@@ -1,0 +1,7 @@
+# Web platform (local interactive demo) — layer on top of requirements.txt.
+# Install: python -m pip install -r requirements-web.txt
+# Runs the trained connectome live and streams game + neuron activation to a
+# browser (Three.js). CPU-only; no GPU, no cloud, reuses the local checkpoint.
+fastapi>=0.110
+uvicorn>=0.29
+websockets>=12    # uvicorn's WebSocket backend for the /ws live feed

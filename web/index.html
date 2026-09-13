@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>fly-flappy // connectome plays Flappy Bird</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header>
+    <div class="brand">FLY-FLAPPY <span>// a real fruit-fly connectome plays Flappy Bird</span></div>
+    <div class="controls">
+      <button id="startBtn" disabled>Loading brain…</button>
+      <button id="resetBtn" class="ghost">Restart</button>
+      <button id="smoothBtn" class="ghost" title="Toggle between smoothed glow and raw instantaneous activation">Smoothed glow: ON</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="game-col">
+      <h2>THE GAME</h2>
+      <div class="game-wrap">
+        <img id="gameImg" alt="Flappy Bird" />
+        <div id="deadFlash" class="dead-flash">CRASH</div>
+      </div>
+      <div class="hud">
+        <div class="stat"><label>score</label><span id="score">0</span></div>
+        <div class="stat"><label>reward</label><span id="reward">0.00</span></div>
+        <div class="stat"><label>episode reward</label><span id="epReward">0.00</span></div>
+        <div class="stat"><label>action</label><span id="action">—</span></div>
+        <div class="stat"><label>step</label><span id="step">0</span></div>
+      </div>
+      <div class="legend">
+        <span class="dot motor"></span>motor
+        <span class="dot sensory"></span>sensory
+        <span class="dot other"></span>interneuron
+      </div>
+      <p class="hint">Drag to rotate the brain · scroll to zoom. Brightness = live neuron activation.</p>
+    </section>
+
+    <section class="brain-col">
+      <h2>THE NERVOUS SYSTEM <span id="brainMeta"></span></h2>
+      <div id="brainCanvas"></div>
+      <div id="status" class="status">connecting…</div>
+    </section>
+  </main>
+
+  <script type="module" src="/static/main.js"></script>
+</body>
+</html>
