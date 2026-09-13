@@ -76,7 +76,7 @@ def main():
             from src.morphology.gcs_fetch import fetch_skeletons_swc
             fetch_skeletons_swc(real_ids.tolist(), args.swc_dir)
             if not args.skip_neuropil:
-                print("[render] neuropil meshes aren't in the public GCS bucket — "
+                print("[render] neuropil meshes aren't in the public GCS bucket - "
                       "skipping (use --skeleton-source neuprint for those, or pass "
                       "--skip-neuropil to silence this)")
         else:

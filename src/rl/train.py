@@ -13,6 +13,11 @@ from .callbacks import DashboardCallback
 from .policy import ConnectomeActorCriticPolicy
 
 
+def _tensorboard_available() -> bool:
+    import importlib.util
+    return importlib.util.find_spec("tensorboard") is not None
+
+
 def train(config_path: str = "config/config.yaml", profile: str | None = None) -> Path:
     cfg = load_config(config_path, profile=profile)
     device = resolve_device(cfg.device)
@@ -48,6 +53,16 @@ def train(config_path: str = "config/config.yaml", profile: str | None = None) -
         neuron_map=neuron_map,
         model_cfg=cfg.model,
     )
+    # TensorBoard logging is optional — SB3 hard-errors if tensorboard_log is
+    # set but the package isn't installed, so only enable it when tensorboard
+    # actually imports. Keeps training runnable from the base requirements.txt.
+    tb_dir = None
+    if _tensorboard_available():
+        tb_dir = cfg.training["tensorboard_dir"]
+    else:
+        print("[fly-flappy] tensorboard not installed - training without TB logs "
+              "(pip install tensorboard to enable)")
+
     model = PPO(
         policy=ConnectomeActorCriticPolicy,
         env=vec_env,
@@ -58,7 +73,7 @@ def train(config_path: str = "config/config.yaml", profile: str | None = None) -
         gae_lambda=cfg.training["gae_lambda"],
         ent_coef=cfg.training["ent_coef"],
         policy_kwargs=policy_kwargs,
-        tensorboard_log=cfg.training["tensorboard_dir"],
+        tensorboard_log=tb_dir,
         device=device,
         verbose=1,
     )
@@ -79,12 +94,26 @@ def train(config_path: str = "config/config.yaml", profile: str | None = None) -
             verbose=1,
         ))
 
-    print(f"[fly-flappy] starting training for {cfg.total_timesteps} steps")
-    model.learn(total_timesteps=cfg.total_timesteps, callback=callbacks)
-
     ckpt_dir = Path(cfg.training["checkpoint_dir"])
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     out = ckpt_dir / f"ppo_connectome_{cfg.profile}.zip"
-    model.save(out)
-    print(f"[fly-flappy] saved model -> {out}")
+
+    print(f"[fly-flappy] starting training for {cfg.total_timesteps} steps")
+    try:
+        model.learn(total_timesteps=cfg.total_timesteps, callback=callbacks)
+    finally:
+        # Ctrl+C (or any crash) during learn() skips SB3's own end-of-training
+        # dispatch, which is the only place the video recorder normally closes
+        # and the only thing that would have saved a checkpoint. Without this,
+        # an interrupted run — exactly what the calibration-run workflow in
+        # RUNBOOK.md asks you to do — loses BOTH the video (unplayable, no
+        # moov atom) and the model entirely. VideoRecorder.close() is
+        # idempotent, so this is safe even if learn() completed normally and
+        # already closed it.
+        for cb in callbacks:
+            recorder = getattr(cb, "recorder", None)
+            if recorder is not None:
+                recorder.close()
+        model.save(out)
+        print(f"[fly-flappy] saved model -> {out}")
     return out
