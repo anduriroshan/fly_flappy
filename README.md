@@ -73,6 +73,29 @@ tmux new -s train
 python -m scripts.train --profile full
 ```
 
+### Two-GPU boxes: one for training, one for Blender
+
+If the server has 2+ GPUs, pin each workload to its own card with
+`CUDA_VISIBLE_DEVICES` — this works at the driver level, so neither the
+training code nor the Blender script needs any changes; each process just
+sees "one GPU" and treats it as device 0.
+
+```bash
+nvidia-smi -L                          # confirm both GPUs are visible, note their order
+
+# Terminal / tmux pane 1 — training on GPU 0
+CUDA_VISIBLE_DEVICES=0 python -m scripts.train --profile full
+
+# Terminal / tmux pane 2 — Blender/Cycles render on GPU 1 (run any time,
+# even while training is still going, since it's a separate physical card)
+CUDA_VISIBLE_DEVICES=1 python -m scripts.render_morphology \
+    --recording runs/morphology/activation.npz --dry-run
+```
+
+`CUDA_VISIBLE_DEVICES` is inherited by subprocesses, so it also correctly
+scopes the Blender subprocess that `render_morphology.py` launches — no
+separate flag needed for that.
+
 ## Getting the real connectome
 
 The smoke and full profiles both default to `source: synthetic`. To use
