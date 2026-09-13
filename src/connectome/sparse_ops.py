@@ -22,13 +22,25 @@ the values-gradient was the problem.
 """
 from __future__ import annotations
 
+import os
+
 import torch
 
 
 # Cap on the transient (chunk x nnz) buffer used in the values-gradient, in
-# number of elements. ~50M elems = ~200 MB at fp32; keeps peak memory small
-# regardless of batch size or connectome scale.
-_GRAD_ELEM_BUDGET = 50_000_000
+# number of elements. This was originally set tiny (50M ~ 200MB) purely to be
+# safe before we had real GPU headroom numbers -- but a too-small budget means
+# more, smaller sequential chunks, i.e. more GPU kernel launches doing less
+# work each, which costs real wall-clock time without saving any memory that
+# was actually needed. E.g. at the full MCNS scale (nnz ~ 6.2M), the old 50M
+# budget forced a chunk size of 8, meaning a batch of 256 needed 32 sequential
+# passes through the backward loop instead of 1.
+#
+# Default here (2B elements ~ 8GB at fp32) comfortably fits a 24GB card with
+# room to spare, but is NOT auto-sized to whatever GPU happens to be present.
+# Override via FLY_FLAPPY_GRAD_ELEM_BUDGET if you hit an OOM on a smaller
+# card, or want to push it higher on a bigger one.
+_GRAD_ELEM_BUDGET = int(os.environ.get("FLY_FLAPPY_GRAD_ELEM_BUDGET", 2_000_000_000))
 
 
 class _SparseSynapseMM(torch.autograd.Function):
