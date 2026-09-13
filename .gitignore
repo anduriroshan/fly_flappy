@@ -229,8 +229,10 @@ runs/checkpoints/*
 runs/tb/*
 runs/morphology/*
 !runs/**/.gitkeep
-# runs/videos/* intentionally NOT ignored — tracked via Git LFS (transfer
-# mechanism for training/render videos between laptop and GPU server).
+# runs/videos/* now ignored — training/render videos are large (multi-GB)
+# and go over Google Drive instead of Git LFS's free quota.
+runs/videos/*
+!runs/videos/.gitkeep
 
 # Editor
 .idea/
