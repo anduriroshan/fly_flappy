@@ -134,8 +134,11 @@ h2 span { color: var(--accent); margin-left: 8px; }
 }
 .fly-avatar.tapping .fly-leg-tap {
   stroke: var(--accent);
-  animation: flyTap 0.22s ease-out;
 }
+/* Mirrored rotation so the pair kicks forward together, symmetrically,
+   instead of both legs spinning the same visual direction. */
+.fly-avatar.tapping .fly-leg-tap-left  { animation: flyTapLeft 0.22s ease-out; }
+.fly-avatar.tapping .fly-leg-tap-right { animation: flyTapRight 0.22s ease-out; }
 
 @keyframes flyBob {
   0%, 100% { transform: translateY(0); }
@@ -145,9 +148,14 @@ h2 span { color: var(--accent); margin-left: 8px; }
   from { transform: scaleY(1)    rotate(-6deg); }
   to   { transform: scaleY(0.72) rotate(6deg); }
 }
-@keyframes flyTap {
+@keyframes flyTapLeft {
   0%   { transform: rotate(0deg); }
-  45%  { transform: rotate(22deg); }
+  45%  { transform: rotate(-24deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes flyTapRight {
+  0%   { transform: rotate(0deg); }
+  45%  { transform: rotate(24deg); }
   100% { transform: rotate(0deg); }
 }
 
