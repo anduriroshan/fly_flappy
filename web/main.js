@@ -156,9 +156,10 @@ buttonGroup.add(buttonCap);
 
 let wingPivots = [];     // {pivot, sign} for buzz
 let frontLegPivots = []; // {pivot, sign} for tap
+let tapLegPivot = null;  // the ONE front-leg pivot resting on the button
+let tapSign = 1;         // press direction so that foot swings down onto button
 let flyLoaded = false;
 const GROUND_Y = -0.55;  // invisible ground plane the fly + button sit on
-let flyBaseY = 0.0;      // resting height (set on load); dips slightly on tap
 
 function materialFor(name) {
   if (name.includes("eye")) return flyEyeMat;
@@ -229,16 +230,20 @@ new GLTFLoader().load("/static/assets/fly/fly.glb", async (gltf) => {
   fly.position.x = -ctr.x;                 // center horizontally
   fly.position.z = -ctr.z;                 // center in depth
   fly.position.y = GROUND_Y - box.min.y;   // feet on the ground plane
-  flyBaseY = fly.position.y;               // remember resting height for the dip
 
   // Put the button on the ground right under a front FOOT (tarsus tip) so one
-  // leg visibly rests on it.
+  // leg visibly rests on it, and remember THAT leg so only it presses.
   fly.updateWorldMatrix(true, true);
   const footPos = new THREE.Vector3();
-  const footNode = fly.getObjectByName("rf_tarsus5")
-    || fly.getObjectByName("lf_tarsus5");
+  const rf = fly.getObjectByName("rf_tarsus5");
+  const footNode = rf || fly.getObjectByName("lf_tarsus5");
+  tapLegPivot = (rf ? frontLegPivots[1] : frontLegPivots[0]).pivot;
   if (footNode) footNode.getWorldPosition(footPos);
   buttonGroup.position.set(footPos.x, GROUND_Y, footPos.z);
+  // Pitch sign so the resting foot swings DOWN onto the button (a leg whose
+  // foot sits ahead of its coxa presses down for +rotation.y, behind for −).
+  const footModel = model.worldToLocal(footPos.clone());
+  tapSign = Math.sign(footModel.x - tapLegPivot.position.x) || 1;
 
   // Fixed side-profile camera (no auto-rotate, so the leg stays on the button).
   flyControls.autoRotate = false;
@@ -268,11 +273,11 @@ function updateFly(dt) {
 
   tapAmount += (tapPulse - tapAmount) * (tapPulse > tapAmount ? 0.6 : 0.15);
   tapPulse *= 0.9;
-  // Only the front leg over the button jabs down to press it.
-  frontLegPivots[0].pivot.rotation.z = frontLegPivots[0].sign * tapAmount * 0.55;
+  // Only the ONE front leg resting on the button presses: pitch it down at the
+  // coxa so its foot jabs the button. The body and every other leg stay put.
+  if (tapLegPivot) tapLegPivot.rotation.y = tapSign * tapAmount * 0.5;
 
-  // Tap gesture: the fly presses down slightly, the button depresses + flares.
-  fly.position.y = flyBaseY - tapAmount * 0.06;
+  // The button depresses + flares under that press.
   buttonCap.position.y = BUTTON_CAP_Y - tapAmount * 0.045;
   buttonCapMat.emissiveIntensity = 0.5 + tapAmount * 2.5;
 
