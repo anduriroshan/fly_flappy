@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import CheckpointCallback
 
 from ..connectome import load_connectome, build_neuron_map
 from ..env import make_vec_env
@@ -88,9 +89,25 @@ def train(config_path: str = "config/config.yaml", profile: str | None = None) -
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     out = ckpt_dir / f"ppo_connectome_{cfg.profile}.zip"
 
+    # Periodic checkpoints every ~10 iterations, independent of a clean
+    # shutdown. The try/finally below is the primary safety net, but it only
+    # helps if the process actually receives and acts on a signal -- e.g. a
+    # SubprocVecEnv worker-spawn bug can leave the parent process with
+    # SIGINT permanently masked to SIG_IGN (observed in the wild: confirmed
+    # via /proc/<pid>/status showing SIGINT in SigIgn), in which case NO
+    # signal will ever trigger the finally block and the only clean exit is
+    # letting the full run finish. Periodic saves mean a run in that state
+    # loses at most ~10 iterations of progress instead of everything.
+    periodic_dir = ckpt_dir / "periodic"
+    checkpoint_callback = CheckpointCallback(
+        save_freq=cfg.training["n_steps"] * 10,
+        save_path=str(periodic_dir),
+        name_prefix=f"ppo_connectome_{cfg.profile}",
+    )
+
     print(f"[fly-flappy] starting training for {cfg.total_timesteps} steps")
     try:
-        model.learn(total_timesteps=cfg.total_timesteps)
+        model.learn(total_timesteps=cfg.total_timesteps, callback=checkpoint_callback)
     finally:
         # Ctrl+C (or any crash) during learn() skips SB3's own end-of-training
         # save dispatch — without this, an interrupted run would lose the
