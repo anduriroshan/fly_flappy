@@ -40,15 +40,17 @@
         <span class="dot sensory"></span>sensory
         <span class="dot other"></span>interneuron
       </div>
-      <p class="hint">Drag to rotate the fly / brain · scroll to zoom. Brightness = live neuron activation.</p>
+      <div class="fly-inset">
+        <div class="fly-inset-label">THE FLY <span>— it taps to flap</span></div>
+        <div id="flyShowcase"></div>
+      </div>
+      <p class="hint">Drag to rotate the brain · scroll to zoom. Brightness = live neuron activation.</p>
     </section>
 
     <section class="fly-col">
-      <h2>THE FLY <span id="flyHint">— it taps to flap</span></h2>
+      <h2>THE GAME</h2>
       <div class="fly-wrap">
-        <div id="flyShowcase"></div>
-        <!-- The real Flappy Bird frame the server streams, shown as a crisp
-             2D overlay of what the fly is actually playing. -->
+        <!-- The real Flappy Bird frame the server streams. -->
         <div class="game-overlay">
           <img id="gameImg" alt="Flappy Bird" />
         </div>

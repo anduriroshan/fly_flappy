@@ -54,7 +54,9 @@ button.ghost:hover:not(:disabled) { color: var(--text); border-color: var(--mute
 
 main {
   display: grid;
-  grid-template-columns: 280px 1.15fr 1fr;
+  /* STATUS (holds the fly inset) | game (just wide enough for the tall game) |
+     nervous system (gets the rest of the width) */
+  grid-template-columns: 300px 360px 1fr;
   gap: 18px;
   padding: 18px 22px;
   height: calc(100vh - 59px);
@@ -99,20 +101,23 @@ h2 span { color: var(--accent); margin-left: 8px; }
   image-rendering: pixelated;
 }
 
-/* The fly + its tap button are now a small inset in the lower-right corner. */
+/* The fly + its tap button live in the STATUS column, below the legend. */
+.fly-inset { margin-top: 18px; }
+.fly-inset-label {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.fly-inset-label span { color: var(--accent); letter-spacing: 0; font-weight: 400; }
 #flyShowcase {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  width: 34%;
-  max-width: 230px;
+  width: 100%;
   aspect-ratio: 1 / 1;
   border: 1px solid var(--edge);
   border-radius: 8px;
   overflow: hidden;
   background: radial-gradient(ellipse at center, #0c1020 0%, #05060b 72%);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
-  z-index: 6;
 }
 #flyShowcase canvas { display: block; }
 
