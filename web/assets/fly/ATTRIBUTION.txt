@@ -1,0 +1,17 @@
+Fly 3D model
+============
+
+fly.glb is assembled (see scripts/build_fly_model.py) from the simplified
+mesh set of NeuroMechFly v2, distributed with FlyGym:
+
+  FlyGym / NeuroMechFly v2
+  https://github.com/NeLy-EPFL/flygym
+  License: Apache-2.0
+
+The meshes are derived from an X-ray micro-CT scan of an adult Drosophila
+melanogaster. Only the pre-simplified (max 2000 faces per part) meshes and
+the rigging.yaml joint layout are used; parts are assembled into a single
+GLB via the anatomy tree in flygym/anatomy.py. No FlyGym source code is
+vendored — only its Apache-2.0-licensed mesh assets and rigging data.
+
+If you redistribute this asset, retain this notice per the Apache-2.0 terms.
