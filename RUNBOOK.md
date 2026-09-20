@@ -66,18 +66,23 @@ source .venv/bin/activate
 pip install --upgrade pip
 
 # Check the driver's actual CUDA ceiling BEFORE installing torch:
-nvidia-smi   # look at "CUDA Version: XX.X" in the header
+nvidia-smi   # look at "CUDA Version: XX.X" in the header — match the whl/cuXXX
+             # index below to it (e.g. "CUDA Version: 12.8" -> cu128). Using an
+             # older tag than the driver supports also works (CUDA is backward
+             # compatible) but stable-baselines3 >=2.9 requires torch>=2.8
+             # (a security-advisory floor, not just an API bump), and torch
+             # 2.8+ wheels aren't published under old tags like cu121 — so
+             # match the driver's actual version rather than defaulting low.
 
 # Install torch as its OWN command with `--index-url` (not `--extra-index-url`)
-# so pip can ONLY see cu121 wheels and can't silently prefer a newer,
-# driver-incompatible build from default PyPI. cu121 runs fine on any driver
-# reporting CUDA 12.1 or newer (CUDA is backward compatible) — if `nvidia-smi`
-# reports something older than 12.1, use the matching whl/cuXXX index instead.
-pip install torch --index-url https://download.pytorch.org/whl/cu121
+# so pip can ONLY see wheels from this one CUDA-tagged index and can't
+# silently prefer a newer, driver-incompatible build from default PyPI.
+pip install torch --index-url https://download.pytorch.org/whl/cu128
 
 # Confirm BEFORE installing anything else:
 python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
-# torch.cuda.is_available() must print True. If it prints False, stop here —
+# torch.cuda.is_available() must print True, and the version must satisfy
+# stable-baselines3's torch>=2.8 floor. If either check fails, stop here —
 # do not proceed to pytest or training; re-check nvidia-smi vs the torch
 # build you just installed.
 
