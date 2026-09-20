@@ -231,12 +231,14 @@ new GLTFLoader().load("/static/assets/fly/fly.glb", async (gltf) => {
   fly.position.y = GROUND_Y - box.min.y;   // feet on the ground plane
   flyBaseY = fly.position.y;               // remember resting height for the dip
 
-  // Put the button on the ground right under a front leg so one leg rests on
-  // it (use the front-leg pivot's world x after all transforms).
+  // Put the button on the ground right under a front FOOT (tarsus tip) so one
+  // leg visibly rests on it.
   fly.updateWorldMatrix(true, true);
-  const legPos = new THREE.Vector3();
-  frontLegPivots[0].pivot.getWorldPosition(legPos);
-  buttonGroup.position.set(legPos.x, GROUND_Y, 0);
+  const footPos = new THREE.Vector3();
+  const footNode = fly.getObjectByName("rf_tarsus5")
+    || fly.getObjectByName("lf_tarsus5");
+  if (footNode) footNode.getWorldPosition(footPos);
+  buttonGroup.position.set(footPos.x, GROUND_Y, footPos.z);
 
   // Fixed side-profile camera (no auto-rotate, so the leg stays on the button).
   flyControls.autoRotate = false;

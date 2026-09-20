@@ -235,3 +235,6 @@ runs/morphology/*
 # Editor
 .idea/
 *.swp
+
+# generated preview from build_fly_model.py
+web/assets/fly/fly_preview.png

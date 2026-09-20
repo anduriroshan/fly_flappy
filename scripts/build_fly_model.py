@@ -33,6 +33,7 @@ FLYGYM = Path(os.environ.get(
 ))
 MESH_DIR = FLYGYM / "meshes" / "simplified_max2000faces"
 RIGGING = FLYGYM / "rigging.yaml"
+NEUTRAL_POSE = FLYGYM / "pose" / "_manual_specs" / "neutral.yaml"
 
 # ---- anatomy tree, transcribed from flygym/anatomy.py ----
 LEG_LINKS = ["coxa", "trochanterfemur", "tibia", *(f"tarsus{s}" for s in "12345")]
@@ -79,6 +80,47 @@ def quat_to_mat(q):
     ])
 
 
+def _rot(axis, deg):
+    t = np.radians(deg)
+    c, s = np.cos(t), np.sin(t)
+    R = np.eye(4)
+    if axis == "x":
+        R[:3, :3] = [[1, 0, 0], [0, c, -s], [0, s, c]]
+    elif axis == "y":
+        R[:3, :3] = [[c, 0, s], [0, 1, 0], [-s, 0, c]]
+    else:  # z
+        R[:3, :3] = [[c, -s, 0], [s, c, 0], [0, 0, 1]]
+    return R
+
+
+# flygym axis convention (anatomy.py): pitch->y, roll->z, yaw->x. Neutral
+# pose chains DOFs in axis_order [roll, pitch, yaw].
+_AXIS_LETTER = {"roll": "z", "pitch": "y", "yaw": "x"}
+_AXIS_ORDER = ["roll", "pitch", "yaw"]
+
+
+def load_pose(path):
+    """Parse neutral.yaml -> {(parent, child): {axis: degrees}} (left+center)."""
+    data = yaml.safe_load(path.read_text())
+    joints = {}
+    for key, deg in data["joint_angles"].items():
+        parent, child, axis = key.rsplit("-", 2)
+        joints.setdefault((parent, child), {})[axis] = deg
+    return joints
+
+
+def pose_R(parent, child, pose):
+    """Composed joint rotation for the parent->child joint, in axis order."""
+    angles = pose.get((parent, child))
+    if not angles:
+        return np.eye(4)
+    R = np.eye(4)
+    for axis in _AXIS_ORDER:          # roll, then pitch, then yaw
+        if axis in angles:
+            R = R @ _rot(_AXIS_LETTER[axis], angles[axis])
+    return R
+
+
 def local_T(entry):
     T = np.eye(4)
     T[:3, :3] = quat_to_mat(entry["quat"])
@@ -86,19 +128,43 @@ def local_T(entry):
     return T
 
 
-def world_T(name, rig, cache):
+def world_T(name, rig, cache, pose):
     if name in cache:
         return cache[name]
+    # Place the segment frame (rigging) then rotate it by the neutral-pose
+    # joint angles at that joint — this bends the legs into a standing stance.
     T = local_T(rig[name])
     parent = PARENT.get(name)
     if parent is not None:
-        T = world_T(parent, rig, cache) @ T
+        T = T @ pose_R(parent, name, pose)
+        T = world_T(parent, rig, cache, pose) @ T
     cache[name] = T
     return T
 
 
+def _preview(scene, path):
+    """Offscreen side + front scatter of the assembled fly, for verifying the
+    pose without a browser. Model frame: X fore-aft, Y left-right, Z up."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    pts = np.vstack([g.vertices for g in scene.geometry.values()])[::13]
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    ax1.scatter(pts[:, 0], pts[:, 2], s=1, c="#c88030")
+    ax1.set_title("side (X fore-aft vs Z up)"); ax1.set_aspect("equal")
+    ax2.scatter(pts[:, 1], pts[:, 2], s=1, c="#c88030")
+    ax2.set_title("front (Y vs Z up)"); ax2.set_aspect("equal")
+    for ax in (ax1, ax2):
+        ax.axhline(pts[:, 2].min(), color="#00ffc8", lw=0.8)   # ground line
+    fig.savefig(path, dpi=80)
+    plt.close(fig)
+    print(f"[build_fly_model] preview -> {path}")
+
+
 def main():
     rig = yaml.safe_load(RIGGING.read_text())
+    pose = load_pose(NEUTRAL_POSE)
     cache = {}
     scene = trimesh.Scene()
     pivots = {}
@@ -112,7 +178,7 @@ def main():
             continue
         mesh = trimesh.load(stl, process=False)
         mesh.apply_scale(MESH_SCALE)      # metres -> mm, matching the rigging
-        Tw = world_T(name, rig, cache)
+        Tw = world_T(name, rig, cache, pose)
         mesh.apply_transform(Tw)          # bake world transform into vertices
         scene.add_geometry(mesh, node_name=name, geom_name=name)
 
@@ -127,13 +193,14 @@ def main():
 
     # Animation pivots (world hinge points) for the browser.
     for seg in ("l_wing", "lf_coxa"):
-        p = world_T(seg, rig, cache)[:3, 3]
+        p = world_T(seg, rig, cache, pose)[:3, 3]
         pivots[seg] = p.tolist()
         pivots["r" + seg[1:]] = (MIRROR @ p).tolist()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     glb_path = OUT_DIR / "fly.glb"
     glb_path.write_bytes(scene.export(file_type="glb"))
+    _preview(scene, OUT_DIR / "fly_preview.png")
 
     bounds = scene.bounds
     meta = {
