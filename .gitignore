@@ -228,6 +228,8 @@ data/connectome/*.npz
 runs/checkpoints/*
 runs/tb/*
 runs/web/*
+runs/videos/*
+runs/morphology/*
 !runs/**/.gitkeep
 
 # Editor
