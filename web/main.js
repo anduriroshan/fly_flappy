@@ -157,6 +157,7 @@ buttonGroup.add(buttonCap);
 let wingPivots = [];     // {pivot, sign} for buzz
 let frontLegPivots = []; // {pivot, sign} for tap
 let tapLegPivot = null;  // the ONE front-leg pivot resting on the button
+let tapAxis = "y";       // which local pivot axis presses the toe downward
 let tapSign = 1;         // press direction so that foot swings down onto button
 let flyLoaded = false;
 const GROUND_Y = -0.55;  // invisible ground plane the fly + button sit on
@@ -231,24 +232,91 @@ new GLTFLoader().load("/static/assets/fly/fly.glb", async (gltf) => {
   fly.position.z = -ctr.z;                 // center in depth
   fly.position.y = GROUND_Y - box.min.y;   // feet on the ground plane
 
-  // Put the button on the ground right under a front FOOT (tarsus tip) so one
-  // leg visibly rests on it, and remember THAT leg so only it presses.
+  // ---- place the button under a real FRONT foot and frame it like the ref ----
   fly.updateWorldMatrix(true, true);
-  const footPos = new THREE.Vector3();
-  const rf = fly.getObjectByName("rf_tarsus5");
-  const footNode = rf || fly.getObjectByName("lf_tarsus5");
-  tapLegPivot = (rf ? frontLegPivots[1] : frontLegPivots[0]).pivot;
-  if (footNode) footNode.getWorldPosition(footPos);
-  buttonGroup.position.set(footPos.x, GROUND_Y, footPos.z);
-  // Pitch sign so the resting foot swings DOWN onto the button (a leg whose
-  // foot sits ahead of its coxa presses down for +rotation.y, behind for −).
-  const footModel = model.worldToLocal(footPos.clone());
-  tapSign = Math.sign(footModel.x - tapLegPivot.position.x) || 1;
 
-  // Fixed side-profile camera (no auto-rotate, so the leg stays on the button).
+  // Lowest world-space vertex of a node's mesh = the actual TOE. The node
+  // origin is the joint up the leg, so placing the button there left it
+  // floating in the gap between the splayed feet — this uses the real tip.
+  const toeOf = (node) => {
+    let mesh = null;
+    node.traverse((o) => { if (o.isMesh && !mesh) mesh = o; });
+    if (!mesh) return null;
+    mesh.updateWorldMatrix(true, false);
+    const pos = mesh.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    let best = null;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+      if (!best || v.y < best.y) best = v.clone();
+    }
+    return best;
+  };
+
+  // Forward direction from thorax -> head, using mesh BBOX centers (the node
+  // origins sit at the joints and nearly coincide, giving no usable forward).
+  // Keeps the camera framing independent of the baked axis convention.
+  const centerOf = (name) => {
+    const node = fly.getObjectByName(name);
+    return node ? new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3()) : null;
+  };
+  const headP = centerOf("c_head");
+  const thoraxP = centerOf("c_thorax") || new THREE.Vector3();
+  const fwd = (headP || new THREE.Vector3(1, 0, 0)).clone().sub(thoraxP); fwd.y = 0;
+  if (fwd.lengthSq() < 1e-6) fwd.set(1, 0, 0);
+  fwd.normalize();
+  const bodyC = new THREE.Vector3(thoraxP.x, 0, thoraxP.z);
+
+  // The two front legs with their real toe positions; pick the one nearest the
+  // camera so the button-on-foot reads clearly, and remember it as THE tapper.
+  const frontLegs = [
+    { pivot: frontLegPivots[0].pivot, node: fly.getObjectByName("lf_tarsus5") },
+    { pivot: frontLegPivots[1].pivot, node: fly.getObjectByName("rf_tarsus5") },
+  ].map((L) => ({ ...L, toe: L.node ? toeOf(L.node) : null }))
+   .filter((L) => L.toe)
+   .sort((a, b) => b.toe.z - a.toe.z);
+  const chosen = frontLegs[0];
+
+  if (chosen) {
+    tapLegPivot = chosen.pivot;
+    buttonGroup.position.set(chosen.toe.x, GROUND_Y, chosen.toe.z);
+
+    // Press axis/sign: probe the pivot's local axes, keep whichever moves the
+    // toe most DOWNWARD — no reliance on any baked axis convention.
+    const baseY = chosen.toe.y;
+    let best = { axis: "y", sign: 1, drop: -Infinity };
+    for (const axis of ["x", "y", "z"]) {
+      for (const sign of [1, -1]) {
+        const prev = chosen.pivot.rotation[axis];
+        chosen.pivot.rotation[axis] = prev + sign * 0.25;
+        fly.updateWorldMatrix(true, true);
+        const t = toeOf(chosen.node);
+        chosen.pivot.rotation[axis] = prev;
+        const drop = baseY - t.y;                 // + = toe dipped down
+        if (drop > best.drop) best = { axis, sign, drop };
+      }
+    }
+    fly.updateWorldMatrix(true, true);
+    tapAxis = best.axis; tapSign = best.sign;
+  }
+
+  // Side-3/4 camera (like the reference photo), built from `fwd` so it frames
+  // the fly's profile and the chosen foot on the button regardless of facing.
   flyControls.autoRotate = false;
-  flyControls.target.set(0, GROUND_Y + 0.55, 0);
-  flyCamera.position.set(0, GROUND_Y + 0.7, 3.4);
+  const up = new THREE.Vector3(0, 1, 0);
+  const side = new THREE.Vector3().crossVectors(fwd, up).normalize();
+  const toeOff = chosen
+    ? new THREE.Vector3(chosen.toe.x - bodyC.x, 0, chosen.toe.z - bodyC.z)
+    : side;
+  if (side.dot(toeOff) < 0) side.negate();   // favour the chosen foot's side
+  const focus = new THREE.Vector3(
+    chosen ? chosen.toe.x * 0.45 : 0, GROUND_Y + 0.4,
+    chosen ? chosen.toe.z * 0.45 : 0);
+  flyControls.target.copy(focus);
+  flyCamera.position.copy(focus)
+    .addScaledVector(side, 2.7)
+    .addScaledVector(fwd, 1.1)
+    .addScaledVector(up, 1.25);
   flyCamera.near = 0.01;
   flyCamera.far = 100;
   flyCamera.updateProjectionMatrix();
@@ -273,9 +341,10 @@ function updateFly(dt) {
 
   tapAmount += (tapPulse - tapAmount) * (tapPulse > tapAmount ? 0.6 : 0.15);
   tapPulse *= 0.9;
-  // Only the ONE front leg resting on the button presses: pitch it down at the
-  // coxa so its foot jabs the button. The body and every other leg stay put.
-  if (tapLegPivot) tapLegPivot.rotation.y = tapSign * tapAmount * 0.5;
+  // Only the ONE front leg resting on the button presses: rotate it at the
+  // coxa (about the probed axis) so its toe jabs the button straight DOWN.
+  // The body and every other leg stay put.
+  if (tapLegPivot) tapLegPivot.rotation[tapAxis] = tapSign * tapAmount * 0.5;
 
   // The button depresses + flares under that press.
   buttonCap.position.y = BUTTON_CAP_Y - tapAmount * 0.045;
