@@ -58,9 +58,11 @@ print("input_current stats: mean=%.6f std=%.6f max_abs=%.6f nonzero=%d"
          input_current.abs().max().item(), (input_current != 0).sum().item()))
 
 v = torch.zeros(B, net.n_neurons)
-v.requires_grad_(False)
+drives = []
 for step in range(net.sim_steps):
     drive = sparse_synapse_drive(net._syn_values, net._syn_indices, v, net.n_neurons)
+    drive.retain_grad()   # keep .grad on this non-leaf so we can inspect it after backward
+    drives.append(drive)
     print(f"step {step}: drive mean=%.6f std=%.6f max_abs=%.6f"
           % (drive.mean().item(), drive.std().item(), drive.abs().max().item()))
     pre_act = drive + input_current
@@ -70,12 +72,46 @@ for step in range(net.sim_steps):
     print(f"step {step}: v mean=%.6f std=%.6f max_abs=%.6f"
           % (v.mean().item(), v.std().item(), v.abs().max().item()))
 
-# ---- Part 3: the actual test, exactly as written, for a final pass/fail ----
-print()
-print("=" * 60)
-logits, value, _ = net(obs)
+motor_activity = v.index_select(1, net.motor_idx)
+logits = net.action_head(motor_activity)
+value = net.value_head(motor_activity)
 (logits.sum() + value.sum()).backward()
+for step, drive in enumerate(drives):
+    gd = drive.grad
+    print(f"step {step}: grad_drive is None? {gd is None}  abs().sum()="
+          f"{None if gd is None else gd.abs().sum().item()}")
 g = net._syn_values.grad
 gsum = None if g is None else g.abs().sum().item()
-print("PART 3 (real test replica): grad is None?", g is None, " abs().sum() =", gsum)
-print("PART 3:", "PASS" if (g is not None and gsum > 0) else "FAIL")
+print("PART 2 (manual replica w/ hooks): grad is None?", g is None, " abs().sum() =", gsum)
+print("PART 2:", "PASS" if (g is not None and gsum > 0) else "FAIL")
+
+# ---- Part 3: the actual test, exactly as written (fresh net, no leftover
+# grad state from Part 2's manual replica above), for a final pass/fail ----
+print()
+print("=" * 60)
+net2 = ConnectomeNet(spec, nmap, obs_dim=4, action_dim=2, sim_steps=2, train_synapses=True)
+net2.load_state_dict(net.state_dict())
+logits2, value2, _ = net2(obs)
+(logits2.sum() + value2.sum()).backward()
+g2 = net2._syn_values.grad
+gsum2 = None if g2 is None else g2.abs().sum().item()
+print("PART 3 (real test replica): grad is None?", g2 is None, " abs().sum() =", gsum2)
+print("PART 3:", "PASS" if (g2 is not None and gsum2 > 0) else "FAIL")
+
+# ---- Part 4: minimal 2-chained-call case with a hand-derivable ground
+# truth, isolating "does grad accumulate correctly when the same leaf
+# parameter is used across 2 sequential Function.apply() calls where the
+# 2nd call's input depends on the 1st call's output" (exactly the sim_steps
+# recurrence shape) from everything else the real network also does
+# (tanh, leak, Linear heads, index_select). ----
+print()
+print("=" * 60)
+values4 = torch.tensor([2.0, 3.0], requires_grad=True)
+indices4 = torch.tensor([[0, 1], [1, 2]], dtype=torch.long)
+v0 = torch.tensor([[1.0, 10.0, 100.0]])
+drive0 = sparse_synapse_drive(values4, indices4, v0, 3)
+drive1 = sparse_synapse_drive(values4, indices4, drive0, 3)
+drive1.sum().backward()
+print("values4.grad:", values4.grad.tolist(), " expected: [300.0, 200.0]")
+part4_ok = values4.grad is not None and torch.allclose(values4.grad, torch.tensor([300.0, 200.0]))
+print("PART 4 (chained 2-call, same leaf):", "PASS" if part4_ok else "FAIL")
