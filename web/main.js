@@ -136,6 +136,15 @@ const flyWingMat = new THREE.MeshStandardMaterial({
 const fly = new THREE.Group();
 flyScene.add(fly);
 
+// TEMP bisect: a bright cube at origin. If this shows but the fly doesn't,
+// the fly geometry/material is the issue; if neither shows, it's the
+// renderer/camera. Remove once resolved.
+const _testCube = new THREE.Mesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  new THREE.MeshBasicMaterial({ color: 0xff00ff })
+);
+flyScene.add(_testCube);
+
 let wingPivots = [];     // {pivot, sign} for buzz
 let frontLegPivots = []; // {pivot, sign} for tap
 let flyLoaded = false;
@@ -436,7 +445,11 @@ function animate() {
   updateFly(dt);
   if (composer) composer.render();
   else renderer.render(scene, camera);
-  flyRenderer.render(flyScene, flyCamera);
+  // Only render the fly once its canvas has a real size, to avoid
+  // GL_INVALID_FRAMEBUFFER_OPERATION (zero-size attachment) spam.
+  if (flyContainer.clientWidth > 0 && flyContainer.clientHeight > 0) {
+    flyRenderer.render(flyScene, flyCamera);
+  }
 }
 animate();
 
