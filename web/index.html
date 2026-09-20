@@ -31,6 +31,19 @@
       <div class="game-wrap">
         <img id="gameImg" alt="Flappy Bird" />
         <div id="deadFlash" class="dead-flash">CRASH</div>
+        <div class="fly-avatar" id="flyAvatar" title="the fly — its tap is the FLAP action">
+          <svg viewBox="0 0 100 90" width="72" height="65">
+            <ellipse class="fly-wing fly-wing-left" cx="32" cy="34" rx="22" ry="12" />
+            <ellipse class="fly-wing fly-wing-right" cx="68" cy="34" rx="22" ry="12" />
+            <ellipse class="fly-body" cx="50" cy="50" rx="16" ry="21" />
+            <circle class="fly-head" cx="50" cy="26" r="11" />
+            <circle class="fly-eye" cx="44" cy="24" r="3.2" />
+            <circle class="fly-eye" cx="56" cy="24" r="3.2" />
+            <line class="fly-leg" x1="38" y1="66" x2="28" y2="80" />
+            <line class="fly-leg" x1="62" y1="66" x2="72" y2="80" />
+            <line class="fly-leg fly-leg-tap" id="flyTapLeg" x1="50" y1="68" x2="50" y2="84" />
+          </svg>
+        </div>
       </div>
       <div class="hud">
         <div class="stat"><label>score</label><span id="score">0</span></div>

@@ -91,6 +91,66 @@ h2 span { color: var(--accent); margin-left: 8px; }
 }
 .dead-flash.show { opacity: 1; }
 
+/* The fly avatar: an idle, hovering, wing-fluttering insect that "taps" its
+   front leg in sync with the real FLAP action coming from the model — a
+   literal stand-in for "a fly's nervous system is what's actually playing
+   this game", not just an abstract brain lighting up next to an unrelated
+   bird sprite. */
+.fly-avatar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgba(0, 255, 200, 0.35));
+  animation: flyBob 2.4s ease-in-out infinite;
+}
+.fly-body, .fly-head {
+  fill: #241f3a;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.fly-eye {
+  fill: var(--accent);
+  filter: drop-shadow(0 0 3px var(--accent));
+}
+.fly-wing {
+  fill: rgba(0, 255, 200, 0.16);
+  stroke: rgba(0, 255, 200, 0.5);
+  stroke-width: 1;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: flyWingFlutter 0.16s ease-in-out infinite alternate;
+}
+.fly-wing-right { animation-delay: 0.02s; }
+.fly-leg {
+  stroke: #6a6485;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.fly-leg-tap {
+  transform-box: fill-box;
+  transform-origin: top center;
+}
+.fly-avatar.tapping .fly-leg-tap {
+  stroke: var(--accent);
+  animation: flyTap 0.22s ease-out;
+}
+
+@keyframes flyBob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+@keyframes flyWingFlutter {
+  from { transform: scaleY(1)    rotate(-6deg); }
+  to   { transform: scaleY(0.72) rotate(6deg); }
+}
+@keyframes flyTap {
+  0%   { transform: rotate(0deg); }
+  45%  { transform: rotate(22deg); }
+  100% { transform: rotate(0deg); }
+}
+
 .hud {
   display: grid;
   grid-template-columns: 1fr 1fr;

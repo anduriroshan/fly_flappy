@@ -12,6 +12,15 @@ const statusEl = el("status");
 const gameImg = el("gameImg");
 const deadFlash = el("deadFlash");
 const brainMeta = el("brainMeta");
+const flyAvatar = el("flyAvatar");
+
+// Restart the CSS tap animation even if two FLAP frames arrive back to back
+// (re-adding the same class mid-animation is a no-op without forcing reflow).
+function triggerFlyTap() {
+  flyAvatar.classList.remove("tapping");
+  void flyAvatar.offsetWidth;
+  flyAvatar.classList.add("tapping");
+}
 
 // ---------------------------------------------------------------- 3D scene
 const container = el("brainCanvas");
@@ -278,6 +287,7 @@ function connect() {
     if (f.img) gameImg.src = f.img;
     applyActivation(f.act);
     setHud(f);
+    if (f.action === 1) triggerFlyTap();
     if (f.done) {
       deadFlash.classList.add("show");
       setTimeout(() => deadFlash.classList.remove("show"), 700);
