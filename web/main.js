@@ -134,29 +134,31 @@ const flyWingMat = new THREE.MeshStandardMaterial({
 const fly = new THREE.Group();
 flyScene.add(fly);
 
-// The tap button the fly presses to flap — sits under its front legs.
+// The tap button the fly presses to flap — small (bigger than a leg, smaller
+// than the fly), sitting on the ground beside its front leg. Positioned after
+// the fly loads (see below).
 const buttonGroup = new THREE.Group();
-buttonGroup.position.set(0, -0.55, 0.15);
 flyScene.add(buttonGroup);
 const buttonBase = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.62, 0.68, 0.16, 40),
+  new THREE.CylinderGeometry(0.19, 0.23, 0.06, 36),
   new THREE.MeshStandardMaterial({ color: 0x0c0e16, roughness: 0.5, metalness: 0.35 })
 );
 buttonGroup.add(buttonBase);
 const buttonCapMat = new THREE.MeshStandardMaterial({
-  color: 0x00ffc8, emissive: 0x00ffc8, emissiveIntensity: 0.45, roughness: 0.3,
+  color: 0x00ffc8, emissive: 0x00ffc8, emissiveIntensity: 0.5, roughness: 0.3,
 });
 const buttonCap = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.46, 0.46, 0.16, 40), buttonCapMat
+  new THREE.CylinderGeometry(0.14, 0.14, 0.07, 36), buttonCapMat
 );
-const BUTTON_CAP_Y = 0.1;
+const BUTTON_CAP_Y = 0.05;
 buttonCap.position.y = BUTTON_CAP_Y;
 buttonGroup.add(buttonCap);
 
 let wingPivots = [];     // {pivot, sign} for buzz
 let frontLegPivots = []; // {pivot, sign} for tap
 let flyLoaded = false;
-let flyBaseY = 0.55;     // resting height; dips slightly on each tap
+const GROUND_Y = -0.55;  // invisible ground plane the fly + button sit on
+let flyBaseY = 0.0;      // resting height (set on load); dips slightly on tap
 
 function materialFor(name) {
   if (name.includes("eye")) return flyEyeMat;
@@ -213,17 +215,33 @@ new GLTFLoader().load("/static/assets/fly/fly.glb", async (gltf) => {
   model.position.set(-c[0], -c[1], -c[2]);
   fly.rotation.x = -Math.PI / 2;
 
-  // Scale to a fixed, smaller on-screen size and raise the fly so its front
-  // legs sit just above the tap button.
+  // Scale to fit the small inset, then stand the fly on an (invisible) ground
+  // plane so it reads like the reference photo: side profile, feet down.
+  const v = new THREE.Vector3();
   fly.updateWorldMatrix(true, true);
-  const box = new THREE.Box3().setFromObject(fly);
-  const maxDim = Math.max(...box.getSize(new THREE.Vector3()).toArray());
-  fly.scale.setScalar(1.5 / maxDim);
-  fly.position.set(0, flyBaseY, 0);
+  let box = new THREE.Box3().setFromObject(fly);
+  const maxDim = Math.max(...box.getSize(v).toArray());
+  fly.scale.setScalar(1.7 / maxDim);
 
-  // Fixed camera framing both the fly and the button below it.
-  flyControls.target.set(0, 0.05, 0);
-  flyCamera.position.set(0, 0.45, 6.8);
+  fly.updateWorldMatrix(true, true);
+  box = new THREE.Box3().setFromObject(fly);
+  const ctr = box.getCenter(v.clone());
+  fly.position.x = -ctr.x;                 // center horizontally
+  fly.position.z = -ctr.z;                 // center in depth
+  fly.position.y = GROUND_Y - box.min.y;   // feet on the ground plane
+  flyBaseY = fly.position.y;               // remember resting height for the dip
+
+  // Put the button on the ground right under a front leg so one leg rests on
+  // it (use the front-leg pivot's world x after all transforms).
+  fly.updateWorldMatrix(true, true);
+  const legPos = new THREE.Vector3();
+  frontLegPivots[0].pivot.getWorldPosition(legPos);
+  buttonGroup.position.set(legPos.x, GROUND_Y, 0);
+
+  // Fixed side-profile camera (no auto-rotate, so the leg stays on the button).
+  flyControls.autoRotate = false;
+  flyControls.target.set(0, GROUND_Y + 0.55, 0);
+  flyCamera.position.set(0, GROUND_Y + 0.7, 3.4);
   flyCamera.near = 0.01;
   flyCamera.far = 100;
   flyCamera.updateProjectionMatrix();
@@ -248,12 +266,13 @@ function updateFly(dt) {
 
   tapAmount += (tapPulse - tapAmount) * (tapPulse > tapAmount ? 0.6 : 0.15);
   tapPulse *= 0.9;
-  for (const l of frontLegPivots) l.pivot.rotation.z = l.sign * tapAmount * 0.7;
+  // Only the front leg over the button jabs down to press it.
+  frontLegPivots[0].pivot.rotation.z = frontLegPivots[0].sign * tapAmount * 0.55;
 
-  // Tap gesture: fly dips toward the button, the button depresses and flares.
-  fly.position.y = flyBaseY - tapAmount * 0.18 + Math.sin(flyClock * 1.6) * 0.02;
-  buttonCap.position.y = BUTTON_CAP_Y - tapAmount * 0.1;
-  buttonCapMat.emissiveIntensity = 0.45 + tapAmount * 2.2;
+  // Tap gesture: the fly presses down slightly, the button depresses + flares.
+  fly.position.y = flyBaseY - tapAmount * 0.06;
+  buttonCap.position.y = BUTTON_CAP_Y - tapAmount * 0.045;
+  buttonCapMat.emissiveIntensity = 0.5 + tapAmount * 2.5;
 
   flyControls.update();
 }
