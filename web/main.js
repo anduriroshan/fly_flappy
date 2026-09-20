@@ -134,9 +134,29 @@ const flyWingMat = new THREE.MeshStandardMaterial({
 const fly = new THREE.Group();
 flyScene.add(fly);
 
+// The tap button the fly presses to flap — sits under its front legs.
+const buttonGroup = new THREE.Group();
+buttonGroup.position.set(0, -0.55, 0.15);
+flyScene.add(buttonGroup);
+const buttonBase = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.62, 0.68, 0.16, 40),
+  new THREE.MeshStandardMaterial({ color: 0x0c0e16, roughness: 0.5, metalness: 0.35 })
+);
+buttonGroup.add(buttonBase);
+const buttonCapMat = new THREE.MeshStandardMaterial({
+  color: 0x00ffc8, emissive: 0x00ffc8, emissiveIntensity: 0.45, roughness: 0.3,
+});
+const buttonCap = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.46, 0.46, 0.16, 40), buttonCapMat
+);
+const BUTTON_CAP_Y = 0.1;
+buttonCap.position.y = BUTTON_CAP_Y;
+buttonGroup.add(buttonCap);
+
 let wingPivots = [];     // {pivot, sign} for buzz
 let frontLegPivots = []; // {pivot, sign} for tap
 let flyLoaded = false;
+let flyBaseY = 0.55;     // resting height; dips slightly on each tap
 
 function materialFor(name) {
   if (name.includes("eye")) return flyEyeMat;
@@ -193,18 +213,19 @@ new GLTFLoader().load("/static/assets/fly/fly.glb", async (gltf) => {
   model.position.set(-c[0], -c[1], -c[2]);
   fly.rotation.x = -Math.PI / 2;
 
-  // Auto-frame the camera to the fly's actual world bounds, so it is always
-  // centered and correctly sized regardless of the model's native scale.
+  // Scale to a fixed, smaller on-screen size and raise the fly so its front
+  // legs sit just above the tap button.
   fly.updateWorldMatrix(true, true);
   const box = new THREE.Box3().setFromObject(fly);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z);
-  flyControls.target.copy(center);
-  // Pull back with margin so the whole fly (legs included) sits in frame.
-  flyCamera.position.set(center.x, center.y + maxDim * 0.15, center.z + maxDim * 2.6);
-  flyCamera.near = maxDim / 100;
-  flyCamera.far = maxDim * 100;
+  const maxDim = Math.max(...box.getSize(new THREE.Vector3()).toArray());
+  fly.scale.setScalar(1.5 / maxDim);
+  fly.position.set(0, flyBaseY, 0);
+
+  // Fixed camera framing both the fly and the button below it.
+  flyControls.target.set(0, 0.05, 0);
+  flyCamera.position.set(0, 0.45, 6.8);
+  flyCamera.near = 0.01;
+  flyCamera.far = 100;
   flyCamera.updateProjectionMatrix();
   flyLoaded = true;
   resizeFly();
@@ -228,6 +249,11 @@ function updateFly(dt) {
   tapAmount += (tapPulse - tapAmount) * (tapPulse > tapAmount ? 0.6 : 0.15);
   tapPulse *= 0.9;
   for (const l of frontLegPivots) l.pivot.rotation.z = l.sign * tapAmount * 0.7;
+
+  // Tap gesture: fly dips toward the button, the button depresses and flares.
+  fly.position.y = flyBaseY - tapAmount * 0.18 + Math.sin(flyClock * 1.6) * 0.02;
+  buttonCap.position.y = BUTTON_CAP_Y - tapAmount * 0.1;
+  buttonCapMat.emissiveIntensity = 0.45 + tapAmount * 2.2;
 
   flyControls.update();
 }

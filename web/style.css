@@ -86,10 +86,10 @@ h2 span { color: var(--accent); margin-left: 8px; }
 /* Live game frame, pinned bottom-left of the fly panel — what the fly plays. */
 .game-overlay {
   position: absolute;
-  left: 14px;
-  bottom: 14px;
-  width: 22%;
-  max-width: 130px;
+  left: 16px;
+  bottom: 16px;
+  width: 32%;
+  max-width: 200px;
   aspect-ratio: 288 / 512;
   border: 1px solid var(--edge);
   border-radius: 6px;
