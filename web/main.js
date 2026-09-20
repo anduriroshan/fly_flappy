@@ -7,14 +7,6 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 // ---------------------------------------------------------------- DOM refs
 const el = (id) => document.getElementById(id);
-
-// TEMP DEBUG overlay — remove once the fly panel is confirmed rendering.
-const _dbg = document.createElement("div");
-_dbg.style.cssText = "position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:99;background:#000;color:#0f0;font:13px monospace;padding:6px 10px;white-space:pre;max-width:90vw;overflow:hidden";
-_dbg.textContent = "dbg: booting";
-document.addEventListener("DOMContentLoaded", () => document.body.appendChild(_dbg));
-window.addEventListener("error", (e) => { _dbg.textContent = "WINDOW ERROR: " + e.message; });
-const dbg = (m) => { _dbg.textContent = "dbg: " + m; };
 const startBtn = el("startBtn");
 const resetBtn = el("resetBtn");
 const statusEl = el("status");
@@ -127,10 +119,12 @@ new ResizeObserver(resizeFly).observe(flyContainer);
 // are applied here by node name.
 const flyBodyMat = new THREE.MeshStandardMaterial({
   color: 0x6e4a26, roughness: 0.62, metalness: 0.12,   // amber-brown chitin
+  side: THREE.DoubleSide,   // STL->GLB winding is unreliable; render both sides
 });
 const flyEyeMat = new THREE.MeshStandardMaterial({
   color: 0x7a1414, roughness: 0.28, metalness: 0.05,
   emissive: 0x3a0405, emissiveIntensity: 0.4,          // deep red compound eyes
+  side: THREE.DoubleSide,
 });
 const flyWingMat = new THREE.MeshStandardMaterial({
   color: 0xcdb488, transparent: true, opacity: 0.28,   // translucent amber wings
@@ -139,15 +133,6 @@ const flyWingMat = new THREE.MeshStandardMaterial({
 
 const fly = new THREE.Group();
 flyScene.add(fly);
-
-// TEMP bisect: a bright cube at origin. If this shows but the fly doesn't,
-// the fly geometry/material is the issue; if neither shows, it's the
-// renderer/camera. Remove once resolved.
-const _testCube = new THREE.Mesh(
-  new THREE.BoxGeometry(1, 1, 1),
-  new THREE.MeshBasicMaterial({ color: 0xff00ff })
-);
-flyScene.add(_testCube);
 
 let wingPivots = [];     // {pivot, sign} for buzz
 let frontLegPivots = []; // {pivot, sign} for tap
@@ -182,6 +167,8 @@ new GLTFLoader().load("/static/assets/fly/fly.glb", async (gltf) => {
   model.traverse((o) => {
     if (o.isMesh) {
       o.geometry.computeVertexNormals();   // GLB from trimesh has no normals
+      o.geometry.computeBoundingSphere();
+      o.frustumCulled = false;             // don't let a stale bounds cull it
       o.material = materialFor(o.name);
     }
   });
@@ -214,25 +201,20 @@ new GLTFLoader().load("/static/assets/fly/fly.glb", async (gltf) => {
   const center = box.getCenter(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z);
   flyControls.target.copy(center);
-  flyCamera.position.set(center.x, center.y + maxDim * 0.1, center.z + maxDim * 1.85);
+  // Pull back with margin so the whole fly (legs included) sits in frame.
+  flyCamera.position.set(center.x, center.y + maxDim * 0.15, center.z + maxDim * 2.6);
   flyCamera.near = maxDim / 100;
   flyCamera.far = maxDim * 100;
   flyCamera.updateProjectionMatrix();
-  flyCenterY = center.y;
   flyLoaded = true;
   resizeFly();
-  dbg(`fly LOADED size=${size.toArray().map(x=>x.toFixed(2))} maxDim=${maxDim.toFixed(2)} `
-    + `cam=${flyCamera.position.toArray().map(x=>x.toFixed(1))} `
-    + `panel=${flyContainer.clientWidth}x${flyContainer.clientHeight} wings=${wingPivots.length} legs=${frontLegPivots.length}`);
-}, (p) => { if (p.total) dbg("fly loading " + Math.round(p.loaded/p.total*100) + "%"); },
-(err) => {
-  dbg("fly LOAD ERROR: " + (err && err.message ? err.message : err));
+}, undefined, (err) => {
   console.error("fly model load failed", err);
+  setStatus("fly model failed to load", "error");
 });
 
 let tapPulse = 0;    // set to 1 on each real FLAP action, decays away
 let tapAmount = 0;   // eased toward tapPulse -- fast strike down, slow recover
-let flyCenterY = 0;
 function triggerFlyTap() { tapPulse = 1; }
 
 let flyClock = 0;

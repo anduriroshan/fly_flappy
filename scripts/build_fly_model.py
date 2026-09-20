@@ -63,6 +63,11 @@ ROOT_SEG = "c_thorax"
 # Appendages to mirror left->right (leading 'l' side prefix -> 'r').
 MIRROR_PREFIXES = ("l_", "lf_", "lm_", "lh_")
 
+# flygym stores meshes in metres but the rigging positions are in mm; the
+# MuJoCo model applies mesh scale [1000,1000,1000] (see mujoco_globals.yaml).
+# Without this the parts are ~1000x too small and scatter as specks.
+MESH_SCALE = 1000.0
+
 
 def quat_to_mat(q):
     """MuJoCo quat [w,x,y,z] -> 3x3 rotation."""
@@ -106,6 +111,7 @@ def main():
             print(f"  skip {name}: no mesh")
             continue
         mesh = trimesh.load(stl, process=False)
+        mesh.apply_scale(MESH_SCALE)      # metres -> mm, matching the rigging
         Tw = world_T(name, rig, cache)
         mesh.apply_transform(Tw)          # bake world transform into vertices
         scene.add_geometry(mesh, node_name=name, geom_name=name)
