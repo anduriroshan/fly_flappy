@@ -64,6 +64,23 @@ export SDL_VIDEODRIVER=dummy    # avoids a headless pygame render failure —
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
+
+# Check the driver's actual CUDA ceiling BEFORE installing torch:
+nvidia-smi   # look at "CUDA Version: XX.X" in the header
+
+# Install torch as its OWN command with `--index-url` (not `--extra-index-url`)
+# so pip can ONLY see cu121 wheels and can't silently prefer a newer,
+# driver-incompatible build from default PyPI. cu121 runs fine on any driver
+# reporting CUDA 12.1 or newer (CUDA is backward compatible) — if `nvidia-smi`
+# reports something older than 12.1, use the matching whl/cuXXX index instead.
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+
+# Confirm BEFORE installing anything else:
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+# torch.cuda.is_available() must print True. If it prints False, stop here —
+# do not proceed to pytest or training; re-check nvidia-smi vs the torch
+# build you just installed.
+
 pip install -r requirements-gpu.txt
 ```
 

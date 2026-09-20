@@ -1,4 +1,16 @@
-# GPU-server (CUDA 12.1) requirements.
+# GPU-server requirements.
+#
+# torch is installed SEPARATELY, before this file (see RUNBOOK.md) — do not
+# add it here. `--extra-index-url` only ADDS a source, it doesn't restrict
+# resolution to it; pip will still happily pick a newer, CUDA-incompatible
+# torch build from default PyPI (PyPI's own `torch` wheels bundle their own
+# recent default CUDA version) and ignore the extra index entirely. That
+# silently installed a cu130 build against a driver that only supports
+# cu128, leaving torch.cuda.is_available() == False with no hard error —
+# only a corrupted sparse-op backward (all-zero gradients) downstream.
+# Installing torch first with a scoped `--index-url` (which DOES fully
+# replace the index, so it must be its own command) avoids this.
+#
 # Install: python -m pip install -r requirements-gpu.txt
 pytest>=7.0    # `python -m pytest tests` is the verification gate in RUNBOOK.md
 numpy>=1.24,<2.0
@@ -15,8 +27,3 @@ sb3-contrib>=2.3
 networkx>=3.1
 matplotlib>=3.7
 tensorboard>=2.15
---extra-index-url https://download.pytorch.org/whl/cu121
-torch>=2.2
-# PyTorch Geometric is optional; used only if you swap the sparse
-# MM connectome for a GNN-style message-passing update.
-torch-geometric>=2.5
