@@ -45,11 +45,16 @@ def _startup() -> None:
     _session = BrainSession(ckpt, profile=PROFILE, max_neurons=MAX_NEURONS)
 
     cached = json.loads(BRAIN_JSON.read_text()) if BRAIN_JSON.exists() else None
-    if cached is not None and cached.get("n_spotlight") == MAX_NEURONS:
+    count_ok = cached is not None and cached.get("n_spotlight") == MAX_NEURONS
+    stamp_ok = cached is not None and cached.get("checkpoint_stamp") == _session.graph_stamp
+    if count_ok and stamp_ok:
         print(f"[app] using cached brain morphology -> {BRAIN_JSON}")
         _brain = cached
     else:
-        if cached is not None:
+        if cached is not None and not stamp_ok:
+            print(f"[app] cached brain.json is for a different checkpoint graph "
+                  f"({cached.get('checkpoint_stamp')} != {_session.graph_stamp}) — rebuilding...")
+        elif cached is not None and not count_ok:
             print(f"[app] cached brain.json was built for {cached.get('n_spotlight')} neurons, "
                   f"but FLY_MAX_NEURONS={MAX_NEURONS} now — rebuilding...")
         else:

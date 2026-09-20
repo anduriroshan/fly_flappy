@@ -18,6 +18,7 @@ browser loads into a Three.js scene.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -55,6 +56,14 @@ class BrainSession:
         self.connectome = self.model.policy.connectome
         self.n_neurons = int(self.connectome.n_neurons)
 
+        self.checkpoint = str(checkpoint)
+        # A stable fingerprint of the *graph* baked into this checkpoint
+        # (neuron ids + sensory/motor sizes). Stamped into brain.json so the
+        # server never silently reuses a morphology cache built from a
+        # different graph — different checkpoints pick different spotlight
+        # bodyIds, so the skeletons and the streamed activation must match.
+        self.graph_stamp = self._graph_stamp()
+
         self.env = make_env(
             cfg.env["id"],
             observation_mode=cfg.env.get("observation_mode", "simple"),
@@ -85,6 +94,15 @@ class BrainSession:
         self._reset_state()
         self._warmup()
 
+    def _graph_stamp(self) -> str:
+        """Stable id of the checkpoint's baked graph (see self.graph_stamp)."""
+        c = self.connectome
+        ids = np.ascontiguousarray(c.neuron_ids.detach().cpu().numpy())
+        h = hashlib.sha1(ids.tobytes()).hexdigest()[:16]
+        return (f"n{self.n_neurons}"
+                f"-s{int(c.sensory_idx.numel())}"
+                f"-m{int(c.motor_idx.numel())}-{h}")
+
     def _build_fast_path(self) -> None:
         """Cache a CSR copy of the (frozen, eval-mode) synapse matrix.
 
@@ -110,14 +128,13 @@ class BrainSession:
     def _balanced_spotlight(self, motor, sensory, max_neurons, seed):
         """~30% motor / 35% sensory / 35% interneuron, capped at max_neurons.
 
-        Note on visible L/R asymmetry: the render looks lopsided because our
-        20,000-neuron training subgraph was built by BFS/snowball sampling
-        from a single seed neuron, biasing the pool toward whichever
-        hemisphere the seed sat in. Verified empirically (arbor-vertex
-        skew 0.21 on x, 0.32 on z). This CANNOT be fixed at the display
-        layer — you can't invent trained neurons on the missing side that
-        were never sampled. The real fix is retraining with bilateral
-        snowball seeds; see BRAIN_VISUALIZATION_FAQ.md for the full story.
+        Note on L/R symmetry: the original 20k subgraph was snowball-sampled
+        from a single seed neuron, biasing the pool toward one hemisphere and
+        making the render look lopsided (arbor-vertex skew 0.21 on x, 0.32 on
+        z). The current checkpoint is the 30k bilateral-seed retrain that
+        targeted exactly that. Any residual skew lives in the sampled graph,
+        not the display layer — you can't invent trained neurons on a side
+        that was never sampled. See BRAIN_VISUALIZATION_FAQ.md for the story.
         """
         rng = np.random.default_rng(seed)
         motor = np.asarray(motor, dtype=np.int64)
@@ -285,8 +302,14 @@ class BrainSession:
                 stride = math.ceil(len(edges) / max_edges_per_neuron)
                 edges = edges[::stride]
             role = str(self.roles[k])
-            verts_flat = [round(float(x), 4) for x in v.reshape(-1)]
-            edges_flat = [i for e in edges for i in e]
+            # Emit ONLY the vertices the (decimated) edges reference, remapping
+            # edge indices to that compact list. A traced skeleton can have
+            # ~10k nodes while we keep <=600 edges, so shipping every node
+            # bloats the payload ~10x with verts the browser never draws.
+            used = sorted({i for e in edges for i in e})
+            remap = {old: new for new, old in enumerate(used)}
+            verts_flat = [round(float(x), 4) for old in used for x in v[old]]
+            edges_flat = [remap[i] for e in edges for i in e]
             neurons.append({
                 "id": bid,
                 "role": role,
@@ -300,6 +323,7 @@ class BrainSession:
             "n_spotlight": int(self.spotlight_idx.size),
             "n_rendered": len(neurons),
             "dataset": "male-cns:v1.0",
+            "checkpoint_stamp": self.graph_stamp,
             "neurons": neurons,
         }
         out_json = Path(out_json)
