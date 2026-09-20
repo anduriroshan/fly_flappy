@@ -95,5 +95,20 @@ def sparse_synapse_drive(values: torch.Tensor, indices: torch.Tensor,
     indices : (2, nnz) coalesced [row=post, col=pre] indices
     v       : (B, n) presynaptic activations
     n       : number of neurons
+
+    Dispatch: for n up to ~50k the builtin autograd path through
+    torch.sparse.mm is used — dense n^2 gradient allocation is n^2 * 4B
+    (2.5GB at n=25k, 10GB at n=50k), well within a 24GB GPU. Only above
+    that does the memory savings of the custom op matter, so it's kept
+    for future scale-up to the full ~166k MCNS budget (dense would be
+    111 GB there — see the module docstring). The custom path did have
+    a numerically-silent correctness bug on some torch+CUDA
+    combinations that took a lot of RL-hours to catch; the builtin path
+    is well-tested by torch itself, so at the sizes it can handle,
+    prefer it.
     """
+    if n <= 50_000:
+        W = torch.sparse_coo_tensor(indices, values, (n, n),
+                                    is_coalesced=True, check_invariants=False)
+        return torch.sparse.mm(W, v.t()).t().contiguous()
     return _SparseSynapseMM.apply(values, indices, v, n)
