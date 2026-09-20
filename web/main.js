@@ -80,7 +80,11 @@ const flyCamera = new THREE.PerspectiveCamera(42, 1, 0.01, 1000);
 flyCamera.position.set(0, 1, 6);
 
 const flyRenderer = new THREE.WebGLRenderer({ antialias: true });
-flyRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+flyRenderer.setPixelRatio(Math.max(1, Math.min(window.devicePixelRatio || 1, 2)));
+flyRenderer.setSize(
+  flyContainer.clientWidth || 400,
+  flyContainer.clientHeight || 400
+);   // explicit non-zero initial size — avoids a 0x0 drawing buffer
 flyRenderer.outputColorSpace = THREE.SRGBColorSpace;
 flyContainer.appendChild(flyRenderer.domElement);
 
