@@ -223,7 +223,28 @@ def _load_flywire(raw_dir: Path, n_neurons: int, k: int, seed: int) -> Connectom
         valid = pre_pos_all.notna() & post_pos_all.notna()
         pre_pos_all = pre_pos_all[valid].to_numpy(dtype=np.int64)
         post_pos_all = post_pos_all[valid].to_numpy(dtype=np.int64)
-        keep_pos = _snowball_sample(pre_pos_all, post_pos_all, len(all_ids), n_neurons, seed)
+
+        # A single-seed snowball biases the whole sample toward whichever
+        # hemisphere the one random seed happens to land in — verified on
+        # this exact dataset (rendered arbor-vertex skew 0.21-0.32 on a
+        # brain that is actually bilaterally symmetric, per the MCNS paper's
+        # own <0.4% reported L/R asymmetry). Fix: seed the growth from BOTH
+        # hemispheres using the real per-neuron "Soma side" label (a real,
+        # verified-populated column: 81,199 right / 79,102 left / 392
+        # center / 6,007 unlabeled in this dataset) and grow each side's
+        # snowball independently to half the target, so the sample stays
+        # anatomically balanced regardless of where either seed starts.
+        side_col = _find(neurons_df.columns, ["Soma side", "soma_side", "side"], required=False)
+        if side_col is not None:
+            side_all = neurons_df[side_col].to_numpy()
+            keep_pos = _snowball_sample_bilateral(
+                pre_pos_all, post_pos_all, len(all_ids), n_neurons, seed, side_all
+            )
+        else:
+            print("[loader] WARNING: no 'Soma side' column found — falling back to "
+                  "single-seed snowball sampling, which can bias the sample toward "
+                  "one hemisphere. See BRAIN_VISUALIZATION_FAQ.md.")
+            keep_pos = _snowball_sample(pre_pos_all, post_pos_all, len(all_ids), n_neurons, seed)
         keep_ids = all_ids[keep_pos]
     else:
         keep_ids = all_ids
@@ -335,6 +356,58 @@ def _snowball_sample(pre_pos: np.ndarray, post_pos: np.ndarray, n_total: int,
             visited[take] = True
             order.extend(take.tolist())
             frontier = take
+
+    return np.array(order[:n_target], dtype=np.int64)
+
+
+def _snowball_sample_bilateral(pre_pos: np.ndarray, post_pos: np.ndarray, n_total: int,
+                               n_target: int, seed: int, side_all: np.ndarray) -> np.ndarray:
+    """Like `_snowball_sample`, but grows two independent snowballs — one
+    seeded from a real "left"-labeled neuron, one from a real "right"-labeled
+    neuron — each restricted to its own hemisphere and targeting half of
+    `n_target`. Any shortfall (a hemisphere's same-side-only component
+    running dry before quota) is backfilled unrestricted at the end so the
+    total always reaches n_target exactly.
+    """
+    ones = np.ones(pre_pos.size, dtype=np.int8)
+    adj = sparse.coo_matrix((ones, (pre_pos, post_pos)), shape=(n_total, n_total)).tocsr()
+    adj = adj.maximum(adj.T)
+
+    rng = np.random.default_rng(seed)
+    visited = np.zeros(n_total, dtype=bool)
+
+    def grow(pool_mask: np.ndarray, quota: int) -> list[int]:
+        local_order: list[int] = []
+        pool_idx = np.where(pool_mask & ~visited)[0]
+        while len(local_order) < quota and pool_idx.size > 0:
+            seed_node = int(rng.choice(pool_idx))
+            visited[seed_node] = True
+            local_order.append(seed_node)
+            frontier = np.array([seed_node])
+            while frontier.size and len(local_order) < quota:
+                neighbor_idx = np.unique(adj[frontier].indices)
+                neighbor_idx = neighbor_idx[pool_mask[neighbor_idx] & ~visited[neighbor_idx]]
+                if neighbor_idx.size == 0:
+                    break
+                budget_left = quota - len(local_order)
+                take = neighbor_idx[:budget_left]
+                visited[take] = True
+                local_order.extend(take.tolist())
+                frontier = take
+            pool_idx = np.where(pool_mask & ~visited)[0]
+        return local_order
+
+    left_mask = side_all == "left"
+    right_mask = side_all == "right"
+    n_left = n_target // 2
+    n_right = n_target - n_left
+
+    order = grow(left_mask, n_left) + grow(right_mask, n_right)
+    if len(order) < n_target:
+        # A hemisphere's own-side-only component ran dry (e.g. isolated
+        # fragment) — backfill unrestricted so the subgraph still hits the
+        # configured neuron budget exactly.
+        order += grow(~visited, n_target - len(order))
 
     return np.array(order[:n_target], dtype=np.int64)
 

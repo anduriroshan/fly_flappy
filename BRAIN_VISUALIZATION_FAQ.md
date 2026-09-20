@@ -97,12 +97,35 @@ its arbors reaching further in one direction. You can't invent trained
 neurons on the missing side that were never in the training subgraph
 to begin with.
 
-**Real fix (deferred, requires retraining ~2 hours on GPU)**: change the
-snowball sampler in `src/connectome/loader.py::_snowball_sample` to
-start from **two bilateral seed neurons** — one on each side of the
-midline — and grow both frontiers together. That produces a symmetric
-20K subgraph the visualization can honestly reflect. Not done yet; the
-current renders are shown honestly as-is, with this known limitation.
+**FIXED (2026-09-15) in `src/connectome/loader.py::_snowball_sample_bilateral`.**
+The real dataset has a populated per-neuron `Soma side` column (81,199
+right / 79,102 left / 392 center — genuinely balanced, real anatomical
+metadata, not derived/fabricated). The sampler now grows two independent
+snowballs — one seeded from a real "left"-labeled neuron, one from a real
+"right"-labeled neuron, each restricted to its own hemisphere and
+targeting half the neuron budget — instead of one snowball from a single
+random seed.
+
+Verified two ways after the fix, at n_neurons=20,000:
+- Resulting subgraph: exactly **10,000 left / 10,000 right** by the real
+  Soma-side label.
+- Re-measured on a fresh random sample of 299 real fetched skeletons from
+  that subgraph: **x-axis (left-right) skew dropped from 0.21 to 0.013**
+  — a >15x improvement, now essentially symmetric.
+
+**A correction to the framing above**: the z-axis skew (0.32) mentioned
+earlier is *not* part of this bug and was never fixable this way — z
+corresponds to the head-to-abdomen body axis (this dataset combines
+brain + ventral nerve cord), and a nervous system running from head to
+tail is *supposed* to be elongated along that axis. Bilateral symmetry
+is specifically a left-right property; there's no biological reason to
+expect head-tail symmetry. Conflating the two earlier was a mistake.
+
+This fix has been validated but **not yet retrained** — it only takes
+effect on the *next* training run (the currently-deployed checkpoint
+still reflects the old, single-seed sample). Retraining takes about the
+same wall-clock time as before (~2 hours at the 20,000-neuron budget on
+a rented GPU).
 
 ## Why does a dense cluster still remain in specific places (even after the L/R fix)?
 
