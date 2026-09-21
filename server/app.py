@@ -8,11 +8,17 @@ Run:  python -m scripts.serve   (or: uvicorn server.app:app)
 Config via env vars (all optional):
     FLY_CHECKPOINT   path to the PPO checkpoint  (default: runs/checkpoints/ppo_connectome_full.zip)
     FLY_PROFILE      config profile              (default: full)
-    FLY_MAX_NEURONS  spotlight size              (default: 30000 -- the full trained
-                     connectome; brain.py scales per-neuron detail down as this
-                     grows to keep payload/GPU load bounded. If it's too heavy on
-                     your machine, lower this -- e.g. 2000 was the previous default
-                     -- startup detects the mismatch and rebuilds brain.json for you.)
+    FLY_MAX_NEURONS  spotlight size              (default: 2000. Tried the full
+                     30,000 -- the model's whole trained population -- and kept
+                     the code path (brain.py scales per-neuron detail down as
+                     this grows, so it won't blow up the payload), but reverted
+                     the default: motor(600)/sensory(1500) are fixed pools, so
+                     at 30,000 they're swamped by ~27,900 "other" neurons and
+                     the render skews uniformly purple instead of showing the
+                     motor/sensory contrast that makes it read well at 2000.
+                     Raise this if you want to retry anyway -- every skeleton
+                     up to 30,000 is already cached locally, so any value
+                     rebuilds fast with no network fetch.)
 """
 from __future__ import annotations
 
@@ -34,7 +40,7 @@ BRAIN_JSON = ROOT / "runs" / "web" / "brain.json"
 
 CHECKPOINT = os.environ.get("FLY_CHECKPOINT", "runs/checkpoints/ppo_connectome_full.zip")
 PROFILE = os.environ.get("FLY_PROFILE", "full")
-MAX_NEURONS = int(os.environ.get("FLY_MAX_NEURONS", "30000"))
+MAX_NEURONS = int(os.environ.get("FLY_MAX_NEURONS", "2000"))
 TARGET_FPS = float(os.environ.get("FLY_FPS", "30"))
 
 app = FastAPI(title="fly-flappy")
