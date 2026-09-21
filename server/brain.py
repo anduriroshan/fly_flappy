@@ -255,10 +255,31 @@ class BrainSession:
         swc_dir: str | Path = "runs/morphology/skeletons",
         out_json: str | Path = "runs/web/brain.json",
         max_edges_per_neuron: int = 600,
+        total_edge_budget: int = 3_000_000,
     ) -> dict:
         """Fetch (once, cached) the spotlight neurons' traced skeletons and
-        emit a compact JSON the browser renders as glowing 3D lines."""
+        emit a compact JSON the browser renders as glowing 3D lines.
+
+        Per-neuron edge count is capped by whichever is smaller:
+        `max_edges_per_neuron`, or `total_edge_budget / n_spotlight`. At a
+        few thousand neurons the budget never binds (max_edges_per_neuron
+        wins, same behavior as before this was added). At tens of thousands
+        of neurons it scales detail per neuron DOWN so the total JSON
+        payload and GPU vertex buffer stay roughly constant regardless of
+        how many neurons are shown — full population coverage, coarser
+        individual arbors, rather than a payload that grows linearly with
+        neuron count (measured: 2000 neurons @600 edges/neuron -> 63MB;
+        naively giving 30,000 neurons that same per-neuron cap would be
+        ~950MB and ~36M vertices, likely to choke a browser's WebGL buffer).
+        """
         from src.morphology.gcs_fetch import fetch_skeletons_swc
+
+        edge_cap = max(20, min(max_edges_per_neuron,
+                                total_edge_budget // max(self.spotlight_idx.size, 1)))
+        if edge_cap < max_edges_per_neuron:
+            print(f"[brain] {self.spotlight_idx.size} spotlight neurons -> "
+                  f"scaling detail to {edge_cap} edges/neuron "
+                  f"(budget {total_edge_budget}) to bound payload size")
 
         swc_dir = Path(swc_dir)
         if not self.has_real_ids:
@@ -298,8 +319,8 @@ class BrainSession:
             coords, parents = loaded[bid]
             v = ((coords - center) / scale).astype(np.float32)
             edges = [(int(par), row) for row, par in enumerate(parents) if par >= 0]
-            if len(edges) > max_edges_per_neuron:
-                stride = math.ceil(len(edges) / max_edges_per_neuron)
+            if len(edges) > edge_cap:
+                stride = math.ceil(len(edges) / edge_cap)
                 edges = edges[::stride]
             role = str(self.roles[k])
             # Emit ONLY the vertices the (decimated) edges reference, remapping
